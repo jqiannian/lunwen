@@ -16,6 +16,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from src.traffic_rules.utils.schedulers import WarmupCosineScheduler
 from tqdm import tqdm
 import typer
 from rich.console import Console
@@ -23,12 +24,16 @@ from rich.table import Table
 from typing import Optional, List, Dict
 import json
 from datetime import datetime
+import numpy as np
 
 from src.traffic_rules.data.traffic_dataset import TrafficLightDataset
 from src.traffic_rules.graph.builder import GraphBuilder
 from src.traffic_rules.models.multi_stage_gat import MultiStageAttentionGAT
 from src.traffic_rules.loss.constraint import StagedConstraintLoss
 from src.traffic_rules.rules.red_light import RedLightRuleEngine
+from src.traffic_rules.monitoring.gradient_monitor import GradientMonitor
+from src.traffic_rules.monitoring.metrics import compute_full_metrics
+from src.traffic_rules.monitoring.visualizer import TrainingVisualizer
 
 app = typer.Typer()
 console = Console()
@@ -69,10 +74,12 @@ class Trainer:
             weight_decay=weight_decay,
         )
         
-        # 学习率调度器
-        self.scheduler = CosineAnnealingLR(
+        # 学习率调度器（Warmup + Cosine）
+        self.scheduler = WarmupCosineScheduler(
             self.optimizer,
-            T_max=epochs,
+            warmup_epochs=min(10, epochs // 5),  # Warmup为总epochs的20%，最多10
+            total_epochs=epochs,
+            min_lr=1e-6,
         )
         
         # 损失函数
@@ -83,6 +90,12 @@ class Trainer:
         
         # 图构建器
         self.graph_builder = GraphBuilder()
+        
+        # 梯度监控器
+        self.grad_monitor = GradientMonitor()
+        
+        # 可视化器
+        self.visualizer = TrainingVisualizer(save_dir='reports')
         
         # 训练状态
         self.current_epoch = 0
@@ -97,6 +110,17 @@ class Trainer:
         self.history = {
             'train_loss': [],
             'val_loss': [],
+            'loss_recon': [],
+            'loss_rule': [],
+            'loss_attn': [],
+            'grad_norms': [],
+            'lr': [],
+            'auc': [],
+            'f1': [],
+            'precision': [],
+            'recall': [],
+            'rule_consistency': [],
+            'attention_focus': [],
         }
     
     def train_epoch(self) -> Dict[str, float]:
@@ -170,6 +194,14 @@ class Trainer:
             self.optimizer.zero_grad()
             loss_total.backward()
             
+            # 梯度监控（在裁剪前）
+            grad_stats = self.grad_monitor.monitor_step(self.model, num_batches)
+            
+            # 检查异常
+            if grad_stats['anomalies']:
+                for anomaly in grad_stats['anomalies']:
+                    console.print(f"[yellow]{anomaly}[/yellow]")
+            
             # 梯度裁剪
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(),
@@ -192,10 +224,14 @@ class Trainer:
         for key in epoch_losses:
             epoch_losses[key] /= max(num_batches, 1)
         
+        # 获取梯度监控摘要
+        grad_summary = self.grad_monitor.get_summary()
+        epoch_losses['grad_norm'] = grad_summary.get('grad_norm_mean', 0.0)
+        
         return epoch_losses
     
     def validate(self) -> Dict[str, float]:
-        """验证集评估"""
+        """验证集评估（含完整指标）"""
         if self.val_dataset is None:
             return {'loss': 0.0}
         
@@ -203,6 +239,13 @@ class Trainer:
         
         val_loss = 0.0
         num_batches = 0
+        
+        # 收集所有预测用于指标计算
+        all_model_scores = []
+        all_rule_scores = []
+        all_attention_weights = []
+        all_entity_types = []
+        all_edge_indices = []
         
         with torch.no_grad():
             for idx in range(len(self.val_dataset)):
@@ -242,10 +285,83 @@ class Trainer:
                 
                 val_loss += loss_total.item()
                 num_batches += 1
+                
+                # 收集分数用于指标计算
+                all_model_scores.append(output['scores'])
+                all_rule_scores.append(rule_scores)
+                all_attention_weights.append(output['gat_attention'])
+                all_entity_types.append(entity_types)
+                all_edge_indices.append(edge_index)
         
         avg_loss = val_loss / max(num_batches, 1)
         
-        return {'loss': avg_loss}
+        # 计算完整指标
+        if len(all_model_scores) > 0:
+            model_scores_cat = torch.cat(all_model_scores)
+            rule_scores_cat = torch.cat(all_rule_scores)
+            
+            # 使用第一个图的attention（简化，实际应该合并）
+            full_metrics = compute_full_metrics(
+                model_scores=model_scores_cat,
+                rule_scores=rule_scores_cat,
+                attention_weights=all_attention_weights[0],
+                entity_types=all_entity_types[0],
+                edge_index=all_edge_indices[0],
+                threshold=0.7,
+            )
+            
+            full_metrics['loss'] = avg_loss
+        else:
+            full_metrics = {'loss': avg_loss}
+        
+        return full_metrics
+    
+    def _check_training_health(self, epoch: int, train_metrics: Dict) -> bool:
+        """
+        检查训练健康状况
+        
+        检测：
+            - Loss振荡
+            - 梯度异常
+            - 验证集退化
+        
+        Returns:
+            is_healthy: 是否健康
+        """
+        warnings = []
+        
+        # 检测Loss振荡（最近3个epochs）
+        if len(self.history['train_loss']) >= 3:
+            recent_losses = self.history['train_loss'][-3:]
+            loss_std = np.std(recent_losses)
+            loss_mean = np.mean(recent_losses)
+            
+            if loss_std > 0.2 * loss_mean:  # 标准差超过均值的20%
+                warnings.append(f"⚠️ Loss振荡: std={loss_std:.4f}, mean={loss_mean:.4f}")
+        
+        # 检测梯度异常
+        grad_summary = self.grad_monitor.get_summary()
+        if grad_summary.get('grad_explosion_count', 0) > 0:
+            warnings.append(f"⚠️ 检测到梯度爆炸: {grad_summary['grad_explosion_count']}次")
+        
+        if grad_summary.get('grad_vanishing_count', 0) > 0:
+            warnings.append(f"⚠️ 检测到梯度消失: {grad_summary['grad_vanishing_count']}次")
+        
+        # 检测验证集退化（最近3个验证点）
+        if len(self.history['val_loss']) >= 3:
+            recent_val = self.history['val_loss'][-3:]
+            if all(recent_val[i] > recent_val[i-1] for i in range(1, len(recent_val))):
+                warnings.append("⚠️ 验证Loss连续上升（可能过拟合）")
+        
+        # 输出警告
+        if warnings:
+            console.print(f"\n[yellow]{'='*60}[/yellow]")
+            console.print(f"[bold yellow]训练健康检查 (Epoch {epoch})[/bold yellow]")
+            for warning in warnings:
+                console.print(f"[yellow]{warning}[/yellow]")
+            console.print(f"[yellow]{'='*60}[/yellow]\n")
+        
+        return len(warnings) == 0
     
     def train(self):
         """完整训练流程"""
@@ -273,16 +389,42 @@ class Trainer:
                 # 打印指标
                 self._print_metrics(epoch, train_metrics, val_metrics)
                 
+                # 健康检查
+                self._check_training_health(epoch, train_metrics)
+                
                 # 保存checkpoint
                 if val_metrics['loss'] < self.best_val_loss:
                     self.best_val_loss = val_metrics['loss']
                     self.save_checkpoint(epoch, train_metrics, val_metrics, is_best=True)
             
+            # 记录训练指标
             self.history['train_loss'].append(train_metrics['total'])
+            self.history['loss_recon'].append(train_metrics.get('recon', 0.0))
+            self.history['loss_rule'].append(train_metrics.get('rule', 0.0))
+            self.history['loss_attn'].append(train_metrics.get('attn', 0.0))
+            self.history['grad_norms'].append(train_metrics.get('grad_norm', 0.0))
+            self.history['lr'].append(self.scheduler.get_last_lr()[0])
+            
+            # 记录验证指标
             if self.val_dataset:
                 self.history['val_loss'].append(val_metrics.get('loss', 0.0))
+                self.history['auc'].append(val_metrics.get('auc', 0.0))
+                self.history['f1'].append(val_metrics.get('f1', 0.0))
+                self.history['precision'].append(val_metrics.get('precision', 0.0))
+                self.history['recall'].append(val_metrics.get('recall', 0.0))
+                self.history['rule_consistency'].append(val_metrics.get('rule_consistency', 0.0))
+                self.history['attention_focus'].append(val_metrics.get('attention_focus', 0.0))
         
         console.print("\n[bold green]✅ 训练完成！[/bold green]")
+        
+        # 生成可视化
+        console.print("\n[cyan]生成训练曲线图...[/cyan]")
+        try:
+            curve_path = self.visualizer.plot_training_curves(self.history)
+            console.print(f"[green]✅ 训练曲线已保存: {curve_path}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️ 可视化失败: {e}[/yellow]")
+        
         self._print_final_summary()
     
     def _get_light_probs(self, entities: List) -> torch.Tensor:
@@ -319,8 +461,19 @@ class Trainer:
         table.add_row("Loss (Recon)", f"{train_metrics['recon']:.4f}")
         table.add_row("Loss (Rule)", f"{train_metrics['rule']:.4f}")
         table.add_row("Loss (Attn)", f"{train_metrics['attn']:.4f}")
+        table.add_row("Grad Norm", f"{train_metrics.get('grad_norm', 0.0):.4f}")
+        
         if self.val_dataset:
+            table.add_row("─" * 12, "─" * 8)  # 分隔线
             table.add_row("Val Loss", f"{val_metrics.get('loss', 0.0):.4f}")
+            table.add_row("AUC", f"{val_metrics.get('auc', 0.0):.4f}")
+            table.add_row("F1 Score", f"{val_metrics.get('f1', 0.0):.4f}")
+            table.add_row("Precision", f"{val_metrics.get('precision', 0.0):.4f}")
+            table.add_row("Recall", f"{val_metrics.get('recall', 0.0):.4f}")
+            table.add_row("Rule Cons.", f"{val_metrics.get('rule_consistency', 0.0):.4f}")
+            table.add_row("Attn Focus", f"{val_metrics.get('attention_focus', 0.0):.4f}")
+        
+        table.add_row("─" * 12, "─" * 8)
         table.add_row("Stage", f"{self.current_stage}")
         table.add_row("LR", f"{self.scheduler.get_last_lr()[0]:.6f}")
         
