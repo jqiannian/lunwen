@@ -1,0 +1,611 @@
+---
+alwaysApply: false
+---
+# 项目文档管理规范 V1.0
+
+## 一、文档体系结构
+
+text
+
+    project-root/
+    ├── README.md                          # 项目总览文档
+    ├── docs/                              # 项目文档目录
+    │   ├── 01-需求文档/                    # 需求相关文档
+    │   │   ├── requirements.md            # 需求文档主文件
+    │   │   ├── user-stories/              # 用户故事目录
+    │   │   └── change-requests/           # 变更需求目录
+    │   ├── 02-设计文档/                    # 设计相关文档
+    │   │   ├── system-design.md           # 系统设计文档
+    │   │   ├── detailed-design/           # 详细设计目录
+    │   │   └── database-design.md         # 数据库设计文档
+    │   ├── 03-开发文档/                    # 开发相关文档
+    │   │   ├── development.md             # 开发文档主文件
+    │   │   ├── api/                       # API文档目录
+    │   │   └── configuration/             # 配置文档目录
+    │   ├── 04-测试文档/                    # 测试相关文档
+    │   │   ├── testing.md                 # 测试文档主文件
+    │   │   ├── test-cases/                # 测试用例目录
+    │   │   └── defect-reports/            # 缺陷报告目录
+    │   ├── 05-部署文档/                    # 部署相关文档
+    │   │   ├── deployment.md              # 部署文档主文件
+    │   │   └── scripts/                   # 部署脚本目录
+    │   ├── 06-用户文档/                    # 用户相关文档
+    │   │   ├── user-manual.md             # 用户手册
+    │   │   └── training-materials/        # 培训材料目录
+    │   └── 07-运维文档/                    # 运维相关文档
+    │       ├── operations.md              # 运维手册
+    │       ├── emergency-plan.md          # 应急方案
+    │       └── bastion-host.md            # 堡垒机使用手册
+
+## 二、README.md - 项目总览文档
+
+### 文档结构
+
+markdown
+
+    # 项目名称
+
+    ## 项目简介
+    - 项目背景和目标
+    - 核心功能概述
+    - 技术栈说明
+
+    ## 文档索引
+    ### 需求文档
+    - [业务需求文档](./docs/01-需求文档/requirements.md)
+    - [用户故事库](./docs/01-需求文档/user-stories/)
+
+    ### 设计文档
+    - [系统设计文档](./docs/02-设计文档/system-design.md)
+    - [数据库设计](./docs/02-设计文档/database-design.md)
+
+    ### 开发文档
+    - [开发环境配置](./docs/03-开发文档/development.md)
+    - [API接口文档](./docs/03-开发文档/api/)
+
+    ### 测试文档
+    - [测试策略](./docs/04-测试文档/testing.md)
+    - [测试用例](./docs/04-测试文档/test-cases/)
+
+    ### 部署文档
+    - [部署手册](./docs/05-部署文档/deployment.md)
+
+    ### 用户文档
+    - [用户操作手册](./docs/06-用户文档/user-manual.md)
+
+    ### 运维文档
+    - [运维手册](./docs/07-运维文档/operations.md)
+
+    ## 项目迭代计划
+
+    ### 迭代 1.0 (YYYY-MM-DD 至 YYYY-MM-DD)
+    **业务需求新增：**
+    - 用户注册登录功能
+    - 基础权限管理
+
+    **影响范围：**
+    - 前端：新增登录页面、用户管理页面
+    - 后端：新增用户服务、权限验证模块
+    - 数据库：新增用户表、角色表
+
+    ### 迭代 2.0 (YYYY-MM-DD 至 YYYY-MM-DD)
+    **业务需求新增：**
+    - 订单管理系统
+    - 支付功能集成
+
+    **影响范围：**
+    - 前端：新增订单管理页面
+    - 后端：新增订单服务、支付服务
+    - 数据库：新增订单表、支付记录表
+
+    ## 快速开始
+    [开发环境搭建指南](./docs/03-开发文档/development.md#环境搭建)
+
+## 三、需求文档规范
+
+### 需求文档 (`docs/01-需求文档/requirements.md`)
+
+markdown
+
+    # 需求文档
+
+    ## 原始用户需求
+    ### 用户痛点
+    1. [具体痛点描述]
+    2. [具体痛点描述]
+
+    ### 用户场景
+    - **场景1**: [场景描述]
+      - 用户角色: [角色]
+      - 前置条件: [条件]
+      - 操作流程: [步骤]
+      - 期望结果: [结果]
+
+    ## 业务需求
+    ### 功能性需求
+    1. **F001 - 用户管理**
+       - 优先级: 高
+       - 描述: 系统应该允许用户注册、登录、修改个人信息
+       - 验收标准:
+         - 用户能够成功注册账号
+         - 用户能够使用账号密码登录
+         - 用户能够修改个人资料
+
+    2. **F002 - 订单管理**
+       - 优先级: 高
+       - 描述: 系统应该提供完整的订单创建、查询、修改流程
+
+    ### 非功能性需求
+    1. **性能需求**
+       - 页面加载时间: < 3秒
+       - API响应时间: < 500ms
+
+    2. **安全需求**
+       - 密码加密存储
+       - SQL注入防护
+
+    ## 系统需求
+    ### 技术约束
+    - Java: Azul Zulu 8
+    - Spring Boot: 2.1.14.RELEASE
+    - 数据库: MySQL 8.0
+
+    ### 兼容性需求
+    - 浏览器支持: Chrome 90+, Safari 14+
+    - 移动端支持: 响应式设计
+
+## 四、设计文档规范
+
+### 系统设计文档 (`docs/02-设计文档/system-design.md`)
+
+markdown
+
+    # 系统设计文档
+
+    ## 架构设计
+    ### 系统架构图
+    [架构图描述或链接]
+
+    ### 技术选型
+    - 前端: Vue 3 + TypeScript + Vite
+    - 后端: Spring Boot 2.1.14 + Java 8
+    - 数据库: MySQL 8.0
+    - 缓存: Redis
+
+    ## 概要设计
+    ### 模块划分
+    1. **用户模块**
+       - 职责: 用户认证、权限管理
+       - 接口: UserService, AuthService
+
+    2. **订单模块**
+       - 职责: 订单生命周期管理
+       - 接口: OrderService, PaymentService
+
+    ### 接口设计
+    ```java
+    public interface UserService {
+        User register(UserRegistrationRequest request);
+        User login(LoginRequest request);
+        User updateProfile(Long userId, ProfileUpdateRequest request);
+    }
+
+## 详细设计
+
+### 核心业务流程
+
+#### 用户注册流程
+
+1.  用户提交注册信息
+2.  验证信息合法性
+3.  密码加密
+4.  保存用户信息
+5.  发送验证邮件
+
+### 数据库设计
+
+\[参见 database-design.md]
+
+text
+
+    ### 数据库设计文档 (`docs/02-设计文档/database-design.md`)
+    ```markdown
+    # 数据库设计文档
+
+    ## 表结构设计
+    ### users 表
+    ```sql
+    CREATE TABLE users (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(50) NOT NULL UNIQUE,
+        email VARCHAR(100) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_username (username),
+        INDEX idx_email (email)
+    );
+
+### orders 表
+
+sql
+
+    CREATE TABLE orders (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        order_number VARCHAR(64) NOT NULL UNIQUE,
+        total_amount DECIMAL(10,2) NOT NULL,
+        status ENUM('PENDING', 'PAID', 'CANCELLED') DEFAULT 'PENDING',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        INDEX idx_user_id (user_id),
+        INDEX idx_order_number (order_number)
+    );
+
+## 索引设计
+
+*   主键索引: 所有表的主键
+*   唯一索引: 用户名、邮箱、订单号
+*   普通索引: 外键字段、查询频繁字段
+
+text
+
+    ## 五、开发文档规范
+
+    ### 开发文档 (`docs/03-开发文档/development.md`)
+    ```markdown
+    # 开发文档
+
+    ## 环境信息
+    ### 开发环境
+    - **操作系统**: macOS (M3)
+    - **Java**: Azul Zulu 8
+    - **Node.js**: 18.x
+    - **Python**: 3.12
+    - **数据库**: MySQL 8.0
+
+    ### 环境搭建步骤
+    1. **Java环境**
+       ```bash
+       # 安装 Azul Zulu 8
+       brew tap homebrew/cask-versions
+       brew install --cask zulu8
+
+1.  **前端环境**
+
+    bash
+
+        npm install
+        npm run dev
+
+## 配置信息
+
+### 应用配置
+
+yaml
+
+    # application.yml
+    spring:
+      datasource:
+        url: jdbc:mysql://localhost:3306/myapp
+        username: dev_user
+        password: dev_pass
+
+### 环境变量配置
+
+bash
+
+    export DATABASE_URL= jdbc:mysql://localhost:3306/myapp
+    export REDIS_URL= redis://localhost:6379
+
+## 开发日志
+
+### YYYY-MM-DD
+
+*   \[功能] 完成了用户注册功能开发
+*   \[修复] 解决了登录时的密码验证问题
+*   \[优化] 优化了数据库查询性能
+
+## API接口文档
+
+\[参见 api/ 目录下的具体文档]
+
+text
+
+    ## 六、测试文档规范
+
+    ### 测试文档 (`docs/04-测试文档/testing.md`)
+    ```markdown
+    # 测试文档
+
+    ## 测试策略
+    ### 单元测试
+    - **后端**: 每个方法必须包含单元测试，覆盖率 >= 80%
+    - **前端**: 每个Vue组件必须包含单元测试
+
+    ### 集成测试
+    - 覆盖所有业务约束条件
+    - 数据库事务测试
+    - API接口集成测试
+
+    ### 验收测试
+    - 核心业务主线流程测试
+    - 用户场景端到端测试
+
+    ## 测试环境管理
+    ### 环境还原代码
+    ```java
+    @AfterEach
+    void tearDown() {
+        // 清理测试数据
+        testDataCleaner.cleanUsers();
+        testDataCleaner.cleanOrders();
+    }
+
+## 前端测试规范
+
+### Selenium页面测试
+
+python
+
+    class TestLoginPage:
+        def test_user_login_success(self):
+            # 测试用户成功登录
+            driver.get("http://localhost:3000/login")
+            driver.find_element(By.ID, "username").send_keys("testuser")
+            driver.find_element(By.ID, "password").send_keys("password123")
+            driver.find_element(By.ID, "login-btn").click()
+            assert "Dashboard" in driver.title
+
+## 后端测试规范
+
+### 单元测试示例
+
+java
+
+    class UserServiceTest {
+        @Test
+        void shouldRegisterUserSuccessfully() {
+            // given
+            UserRegistrationRequest request = new UserRegistrationRequest("user", "pass", "email@test.com");
+            
+            // when
+            User user = userService.register(request);
+            
+            // then
+            assertThat(user.getUsername()).isEqualTo("user");
+            assertThat(user.getEmail()).isEqualTo("email@test.com");
+        }
+    }
+
+## 缺陷管理
+
+### 缺陷分类
+
+1.  **致命缺陷**: 系统崩溃、数据丢失
+2.  **严重缺陷**: 主要功能失效
+3.  **一般缺陷**: 次要功能问题
+4.  **轻微缺陷**: UI显示问题
+
+### 缺陷跟踪模板
+
+markdown
+
+    ## 缺陷报告
+    - **缺陷ID**: BUG-001
+    - **严重程度**: 严重
+    - **发现日期**: YYYY-MM-DD
+    - **相关代码**: `UserService.java:45`
+    - **修复方案**: [描述修复方案]
+    - **验证结果**: [修复后验证情况]
+
+## 性能测试要求
+
+### 测试条件
+
+*   必须在监控下进行性能测试
+*   生产环境数据量模拟
+*   渐进式压力增加
+
+### 监控指标
+
+*   响应时间分布
+*   系统资源使用率
+*   数据库连接池状态
+
+text
+
+    ## 七、部署文档规范
+
+    ### 部署文档 (`docs/05-部署文档/deployment.md`)
+    ```markdown
+    # 部署文档
+
+    ## 生产环境架构
+    ### 架构图
+    [生产环境架构图描述]
+
+    ### 服务器配置
+    - **应用服务器**: 4核8G * 2
+    - **数据库服务器**: 8核16G * 1
+    - **缓存服务器**: 2核4G * 1
+
+    ## 数据库脚本
+    ### 初始化脚本
+    ```sql
+    -- 创建数据库
+    CREATE DATABASE myapp_prod CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+    -- 创建用户并授权
+    CREATE USER 'myapp_user'@'%' IDENTIFIED BY 'secure_password';
+    GRANT ALL PRIVILEGES ON myapp_prod.* TO 'myapp_user'@'%';
+
+### 变更脚本
+
+sql
+
+    -- 版本 1.1 新增用户日志表
+    CREATE TABLE user_audit_log (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT NOT NULL,
+        action VARCHAR(50) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+## 生产环境配置
+
+### 应用配置
+
+yaml
+
+    spring:
+      profiles: production
+      datasource:
+        url: jdbc:mysql://db-server:3306/myapp_prod
+        username: myapp_user
+        password: ${DB_PASSWORD}
+
+## 部署脚本
+
+### Docker部署
+
+dockerfile
+
+    FROM openjdk:8-jre-slim
+    COPY target/myapp.jar /app/myapp.jar
+    EXPOSE 8080
+    ENTRYPOINT ["java", "-jar", "/app/myapp.jar"]
+
+### 部署手册
+
+1.  备份当前版本
+2.  执行数据库迁移脚本
+3.  部署新版本应用
+4.  健康检查
+5.  流量切换
+
+text
+
+    ## 八、用户文档规范
+
+    ### 用户文档 (`docs/06-用户文档/user-manual.md`)
+    ```markdown
+    # 用户操作手册
+
+    ## 系统登录
+    1. 打开系统网址
+    2. 输入用户名和密码
+    3. 点击"登录"按钮
+
+    ## 主要功能操作指南
+    ### 用户管理
+    - **添加用户**: 进入用户管理 → 点击添加 → 填写信息 → 保存
+    - **修改用户**: 点击用户记录 → 修改信息 → 保存
+
+    ### 订单管理
+    - **创建订单**: 进入订单管理 → 点击新建 → 选择商品 → 确认下单
+    - **查询订单**: 使用搜索框输入订单号或客户名称
+
+    ## 测试账号
+    ### 管理员账号
+    - 用户名: admin
+    - 密码: admin123
+    - 权限: 所有功能权限
+
+    ### 普通用户账号
+    - 用户名: testuser
+    - 密码: user123
+    - 权限: 基础功能权限
+
+## 九、运维文档规范
+
+### 运维文档 (`docs/07-运维文档/operations.md`)
+
+markdown
+
+    # 运维手册
+
+    ## 日常运维
+    ### 系统监控
+    - 应用性能监控
+    - 数据库监控
+    - 服务器资源监控
+
+    ### 日志管理
+    - 日志收集和归档
+    - 错误日志告警
+    - 日志分析
+
+    ## 堡垒机使用手册 (`bastion-host.md`)
+    ```markdown
+    # 堡垒机使用指南
+
+    ## 连接方式
+    ```bash
+    ssh -i ~/.ssh/prod_key username@bastion.example.com
+
+## 权限管理
+
+*   开发人员: 仅限应用服务器访问
+*   运维人员: 所有服务器访问权限
+*   DBA: 数据库服务器访问权限
+
+## 操作审计
+
+*   所有操作记录日志
+*   敏感操作需要二次确认
+
+text
+
+    ## 应急方案 (`emergency-plan.md`)
+    ```markdown
+    # 应急响应方案
+
+    ## 故障分类
+    ### P0 - 紧急故障
+    - 系统完全不可用
+    - 响应时间: 15分钟内
+
+    ### P1 - 严重故障
+    - 核心功能不可用
+    - 响应时间: 1小时内
+
+    ## 处理流程
+    1. **故障发现**: 监控告警或用户反馈
+    2. **影响评估**: 确定影响范围和严重程度
+    3. **应急处理**: 执行应急预案
+    4. **根本原因分析**: 问题定位和修复
+    5. **恢复验证**: 确认系统恢复正常
+
+    ## 回滚方案
+    ### 应用回滚
+    ```bash
+    # 回滚到上一个版本
+    ./deploy-rollback.sh v1.0.1
+
+### 数据库回滚
+
+sql
+
+    -- 执行回滚脚本
+    SOURCE /backup/rollback_20240520.sql;
+
+text
+
+    ## 十、文档维护规范
+
+    ### 文档更新机制
+    1. **版本控制**: 所有文档纳入Git版本管理
+    2. **变更记录**: 重要文档变更需要记录变更日志
+    3. **定期评审**: 每月评审文档准确性和完整性
+    4. **责任到人**: 每个文档明确维护负责人
+
+    ### 文档质量要求
+    - 准确性: 内容必须与实际系统一致
+    - 完整性: 涵盖所有必要的信息
+    - 可读性: 结构清晰，语言简洁
+    - 及时性: 随系统变更及时更新
+
+    此文档管理规范确保项目在整个生命周期中保持完整、准确和可维护的文档体系。
+

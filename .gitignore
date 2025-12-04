@@ -1,0 +1,29 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3
+
+# Virtual environments
+.venv/
+.env
+.env.*
+
+# Editor folders
+.vscode/
+.idea/
+
+# Data & model artifacts
+artifacts/
+data/
+reports/
+logs/
+
+# Poetry build outputs
+build/
+dist/
+
+# Monitoring exports
+metrics/
