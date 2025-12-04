@@ -69,7 +69,10 @@ def compute_rule_score_differentiable(
         light_weights = light_probs[:, 0]
     
     # Step 2: 计算分段距离-速度评分 f_dv(d, v)
-    f_dv = torch.zeros(B, device=device)
+    # 统一dtype为float32
+    distances = distances.float()
+    velocities = velocities.float()
+    f_dv = torch.zeros(B, device=device, dtype=torch.float32)
     
     # 情况1：已过线（d < 0）
     # 物理意义：车辆闯过停止线，距离越远（负得越多）违规越严重

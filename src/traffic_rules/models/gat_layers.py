@@ -1,8 +1,7 @@
 """
-图注意力网络（GAT）层实现
+图注意力网络层实现
 
-基于Design-ITER-2025-01.md v2.0 §3.3.1设计
-实现多头GAT with残差连接
+设计依据：Design-ITER-2025-01.md v2.0 §3.3.1
 """
 
 import torch
@@ -11,310 +10,152 @@ import torch.nn.functional as F
 from typing import Tuple, Optional
 
 
-class MultiHeadGATLayer(nn.Module):
+class GATLayer(nn.Module):
     """
-    多头图注意力层（单层）
+    单层图注意力网络（Multi-Head GAT）
     
     设计依据：Design-ITER-2025-01.md v2.0 §3.3.1
-    参考论文：Veličković et al. "Graph Attention Networks" ICLR 2018
+    参考文献：Veličković et al. "Graph Attention Networks" ICLR 2018
     
-    数学形式：
-        α_ij = softmax_j(LeakyReLU(a^T [W h_i || W h_j]))
-        h_i' = Σ_j α_ij W h_j
+    Args:
+        in_dim: 输入特征维度
+        out_dim: 输出特征维度
+        num_heads: 注意力头数（默认8）
+        dropout: Dropout概率（默认0.1）
+        concat: 是否拼接多头输出（False则平均）
     """
     
     def __init__(
         self,
-        in_channels: int,
-        out_channels: int,
+        in_dim: int,
+        out_dim: int,
         num_heads: int = 8,
-        concat: bool = True,
         dropout: float = 0.1,
-        negative_slope: float = 0.2,
-        add_self_loops: bool = True,
+        concat: bool = False,
     ):
-        """
-        初始化多头GAT层
-        
-        Args:
-            in_channels: 输入特征维度
-            out_channels: 每个头的输出维度
-            num_heads: 注意力头数
-            concat: 是否拼接多头输出（True）或平均（False）
-            dropout: Dropout概率
-            negative_slope: LeakyReLU负斜率
-            add_self_loops: 是否添加自环
-        """
         super().__init__()
-        
-        self.in_channels = in_channels
-        self.out_channels = out_channels
         self.num_heads = num_heads
+        self.out_dim = out_dim
         self.concat = concat
-        self.dropout = dropout
-        self.negative_slope = negative_slope
-        self.add_self_loops = add_self_loops
         
-        # 每个头的线性变换
-        self.lin = nn.Linear(in_channels, num_heads * out_channels, bias=False)
-        
-        # 注意力参数 a^T (对每个头)
-        self.att = nn.Parameter(torch.empty(1, num_heads, 2 * out_channels))
-        
-        # Bias（如果concat，维度是num_heads*out_channels；否则是out_channels）
+        # 每个头的维度
         if concat:
-            self.bias = nn.Parameter(torch.empty(num_heads * out_channels))
+            assert out_dim % num_heads == 0
+            self.head_dim = out_dim // num_heads
         else:
-            self.bias = nn.Parameter(torch.empty(out_channels))
+            self.head_dim = out_dim
         
-        self.reset_parameters()
-        
-        # 用于存储最后一次的注意力权重（可视化用）
-        self.last_attention_weights = None
-    
-    def reset_parameters(self):
-        """初始化参数"""
-        nn.init.xavier_uniform_(self.lin.weight)
-        nn.init.xavier_uniform_(self.att)
-        nn.init.zeros_(self.bias)
-    
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-        return_attention_weights: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        """
-        前向传播
-        
-        Args:
-            x: [N, in_channels] - 节点特征
-            edge_index: [2, E] - 边索引 [source, target]
-            return_attention_weights: 是否返回注意力权重
-        
-        Returns:
-            out: [N, num_heads*out_channels] or [N, out_channels]
-            attention_weights: [E] (如果return_attention_weights=True)
-        """
-        N = x.size(0)
-        H = self.num_heads
-        C = self.out_channels
-        
-        # 线性变换：[N, in] → [N, H*C] → [N, H, C]
-        x_transformed = self.lin(x).view(N, H, C)
-        
-        # 添加自环（可选）
-        if self.add_self_loops:
-            edge_index = self._add_self_loops(edge_index, N)
-        
-        # 提取源节点和目标节点
-        source_nodes = edge_index[0]  # [E]
-        target_nodes = edge_index[1]  # [E]
-        
-        # 获取源和目标的特征
-        x_source = x_transformed[source_nodes]  # [E, H, C]
-        x_target = x_transformed[target_nodes]  # [E, H, C]
-        
-        # 拼接特征：[x_i || x_j]
-        x_concat = torch.cat([x_source, x_target], dim=-1)  # [E, H, 2C]
-        
-        # 计算注意力分数：a^T [W h_i || W h_j]
-        # att: [1, H, 2C], x_concat: [E, H, 2C]
-        # 结果: [E, H]
-        alpha = (x_concat * self.att).sum(dim=-1)  # [E, H]
-        alpha = F.leaky_relu(alpha, self.negative_slope)
-        
-        # Softmax归一化（按目标节点分组）
-        alpha = self._softmax_per_target(alpha, target_nodes, N)  # [E, H]
-        
-        # Dropout
-        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-        
-        # 保存注意力权重（用于可视化和损失计算）
-        self.last_attention_weights = alpha.detach()
-        
-        # 消息传递：h_i' = Σ_j α_ij W h_j
-        out = torch.zeros(N, H, C, device=x.device)
-        for h in range(H):
-            # 对每个头单独计算
-            messages = alpha[:, h].unsqueeze(-1) * x_source[:, h, :]  # [E, C]
-            # 聚合到目标节点
-            out[:, h, :].index_add_(0, target_nodes, messages)
-        
-        # 拼接或平均多头输出
-        if self.concat:
-            out = out.view(N, H * C)  # [N, H*C]
-        else:
-            out = out.mean(dim=1)  # [N, C]
-        
-        # 添加bias
-        out = out + self.bias
-        
-        if return_attention_weights:
-            # 返回每条边的平均注意力权重（跨所有头）
-            return out, alpha.mean(dim=1)  # [N, H*C or C], [E]
-        else:
-            return out, None
-    
-    def _add_self_loops(self, edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        """添加自环"""
-        device = edge_index.device
-        self_loops = torch.arange(num_nodes, device=device)
-        self_loops = torch.stack([self_loops, self_loops], dim=0)
-        edge_index = torch.cat([edge_index, self_loops], dim=1)
-        return edge_index
-    
-    def _softmax_per_target(
-        self,
-        alpha: torch.Tensor,
-        target_nodes: torch.Tensor,
-        num_nodes: int,
-    ) -> torch.Tensor:
-        """
-        按目标节点分组计算softmax
-        
-        Args:
-            alpha: [E, H] - 原始注意力分数
-            target_nodes: [E] - 目标节点索引
-            num_nodes: 节点总数
-        
-        Returns:
-            alpha_normalized: [E, H] - 归一化后的注意力权重
-        """
-        # 对每个头分别计算
-        H = alpha.size(1)
-        alpha_normalized = torch.zeros_like(alpha)
-        
-        for h in range(H):
-            # 对每个目标节点，计算其入边的softmax
-            for target in range(num_nodes):
-                mask = (target_nodes == target)
-                if mask.any():
-                    alpha_normalized[mask, h] = F.softmax(alpha[mask, h], dim=0)
-        
-        return alpha_normalized
-
-
-class LocalGATEncoder(nn.Module):
-    """
-    局部GAT编码器（多层GAT堆叠）
-    
-    设计依据：Design-ITER-2025-01.md v2.0 §3.3.1
-    
-    架构：
-        Input → LayerNorm → GAT1 → GELU+Residual → 
-                              GAT2 → GELU+Residual → 
-                              GAT3 → GELU+Residual → Output
-    """
-    
-    def __init__(
-        self,
-        input_dim: int = 10,
-        hidden_dim: int = 128,
-        num_layers: int = 3,
-        num_heads: int = 8,
-        dropout: float = 0.1,
-    ):
-        """
-        初始化局部GAT编码器
-        
-        Args:
-            input_dim: 输入特征维度（默认10）
-            hidden_dim: 隐藏层维度（默认128）
-            num_layers: GAT层数（默认3）
-            num_heads: 注意力头数（默认8）
-            dropout: Dropout概率
-        """
-        super().__init__()
-        
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.num_heads = num_heads
-        
-        # 输入投影
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.input_norm = nn.LayerNorm(hidden_dim)
-        
-        # GAT层堆叠
-        self.gat_layers = nn.ModuleList()
-        for layer_idx in range(num_layers):
-            # 每层输入输出都是hidden_dim
-            # 多头输出拼接后经过线性层降维回hidden_dim
-            gat_layer = MultiHeadGATLayer(
-                in_channels=hidden_dim,
-                out_channels=hidden_dim // num_heads,  # 每个头的输出维度
-                num_heads=num_heads,
-                concat=True,  # 拼接多头
-                dropout=dropout,
-                add_self_loops=True,
-            )
-            self.gat_layers.append(gat_layer)
-        
-        # 每层后的LayerNorm
-        self.layer_norms = nn.ModuleList([
-            nn.LayerNorm(hidden_dim) for _ in range(num_layers)
+        # 权重矩阵（每个头独立）
+        self.W = nn.ModuleList([
+            nn.Linear(in_dim, self.head_dim, bias=False)
+            for _ in range(num_heads)
         ])
         
+        # 注意力权重向量（每个头独立）
+        self.a = nn.ParameterList([
+            nn.Parameter(torch.randn(2 * self.head_dim, 1))
+            for _ in range(num_heads)
+        ])
+        
+        self.leaky_relu = nn.LeakyReLU(0.2)
         self.dropout = nn.Dropout(dropout)
+        
+        # 初始化
+        self.reset_parameters()
+    
+    def reset_parameters(self):
+        """Xavier初始化"""
+        for w in self.W:
+            nn.init.xavier_uniform_(w.weight)
+        for a in self.a:
+            nn.init.xavier_uniform_(a)
     
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
-        return_attention_weights: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[list]]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         前向传播
         
         Args:
-            x: [N, input_dim] - 节点特征
-            edge_index: [2, E] - 边索引
-            return_attention_weights: 是否返回所有层的注意力权重
+            x: 节点特征 [N, in_dim]
+            edge_index: 边索引 [2, E]
         
         Returns:
-            h: [N, hidden_dim] - 编码后的节点表征
-            attention_weights: List[Tensor] - 每层的注意力权重
+            h: 输出特征 [N, out_dim]
+            alpha: 注意力权重 [E]（多头平均）
         """
-        # 输入投影 + LayerNorm
-        h = self.input_proj(x)
-        h = self.input_norm(h)
+        N = x.size(0)
         
-        attention_weights_list = []
+        # 存储每个头的输出
+        head_outputs = []
+        head_attentions = []
         
-        # 多层GAT
-        for layer_idx, gat_layer in enumerate(self.gat_layers):
-            # GAT层
-            h_new, attn_weights = gat_layer(
-                h, edge_index, return_attention_weights=True
-            )
+        for k in range(self.num_heads):
+            # 线性变换
+            h = self.W[k](x)  # [N, head_dim]
             
-            # GELU激活
-            h_new = F.gelu(h_new)
+            # 计算注意力系数
+            src, dst = edge_index[0], edge_index[1]
             
-            # Dropout
-            h_new = self.dropout(h_new)
+            # 拼接源节点和目标节点特征
+            h_cat = torch.cat([h[src], h[dst]], dim=1)  # [E, 2*head_dim]
             
-            # 残差连接（关键：防止梯度消失）
-            h = h_new + h
+            # 计算注意力分数
+            e = self.leaky_relu(torch.matmul(h_cat, self.a[k])).squeeze()  # [E]
             
-            # LayerNorm
-            h = self.layer_norms[layer_idx](h)
+            # Softmax归一化（按目标节点分组）
+            alpha = self._softmax(e, dst, N)  # [E]
+            alpha = self.dropout(alpha)
             
-            if return_attention_weights:
-                attention_weights_list.append(attn_weights)
+            # 聚合邻居特征
+            h_out = torch.zeros(N, self.head_dim, device=x.device)
+            h_out.index_add_(0, dst, alpha.unsqueeze(1) * h[src])
+            
+            head_outputs.append(h_out)
+            head_attentions.append(alpha)
         
-        if return_attention_weights:
-            return h, attention_weights_list
+        # 合并多头输出
+        if self.concat:
+            h_final = torch.cat(head_outputs, dim=1)  # [N, out_dim]
         else:
-            return h, None
+            h_final = torch.stack(head_outputs, dim=0).mean(dim=0)  # [N, head_dim]
+        
+        # 平均注意力权重
+        alpha_avg = torch.stack(head_attentions, dim=0).mean(dim=0)  # [E]
+        
+        return h_final, alpha_avg
+    
+    def _softmax(self, e: torch.Tensor, index: torch.Tensor, N: int) -> torch.Tensor:
+        """
+        按索引分组的Softmax
+        
+        Args:
+            e: 注意力分数 [E]
+            index: 目标节点索引 [E]
+            N: 节点总数
+        
+        Returns:
+            alpha: 归一化后的注意力权重 [E]
+        """
+        # 计算每个节点的最大值（数值稳定性）
+        e_max = torch.full((N,), float('-inf'), device=e.device)
+        e_max.scatter_reduce_(0, index, e, reduce='amax', include_self=False)
+        e_max = e_max[index]
+        
+        # Exp
+        e_exp = torch.exp(e - e_max)
+        
+        # 求和（按目标节点）
+        e_sum = torch.zeros(N, device=e.device)
+        e_sum.index_add_(0, index, e_exp)
+        
+        # 归一化
+        alpha = e_exp / (e_sum[index] + 1e-16)
+        
+        return alpha
 
 
-# ============ 导出接口 ============
-__all__ = [
-    'MultiHeadGATLayer',
-    'LocalGATEncoder',
-]
-
-
-
+# 导出接口
+__all__ = ['GATLayer']
