@@ -1,42 +1,24 @@
 """
 场景图构建器
 
-基于Design-ITER-2025-01.md v2.0 §3.2设计
-将交通场景实体转换为图神经网络输入
+将交通场景转换为图神经网络输入
+
+设计依据：Design-ITER-2025-01.md v2.0 §3.2
 """
+
+import sys
+from pathlib import Path
+
+# 添加项目根目录到路径
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 import torch
 import numpy as np
-from typing import List, Tuple, Dict, Optional
-from dataclasses import dataclass
+from typing import List, Tuple
 
-
-@dataclass
-class GraphBatch:
-    """
-    图批次数据结构
-    
-    用于PyTorch模型输入
-    """
-    # 节点特征矩阵
-    x: torch.Tensor  # [N, input_dim]
-    
-    # 边索引（稀疏格式）
-    edge_index: torch.Tensor  # [2, E]
-    
-    # 实体类型
-    entity_types: torch.Tensor  # [N] (0=car, 1=light, 2=stop)
-    
-    # 实体mask（有效实体）
-    entity_masks: torch.Tensor  # [N]
-    
-    # 场景上下文信息
-    scene_id: str
-    num_nodes: int
-    num_edges: int
-    
-    # 原始实体列表（用于可视化和解释）
-    entities: List  # List[Entity]
+from src.traffic_rules.data import Entity, SceneContext, GraphBatch
+from src.traffic_rules.utils.geometry import compute_distance
 
 
 class GraphBuilder:
@@ -46,288 +28,234 @@ class GraphBuilder:
     设计依据：Design-ITER-2025-01.md v2.0 §3.2
     
     功能：
-        1. 提取实体特征（位置、速度、距离等）
-        2. 构建邻接矩阵（稀疏边）
-        3. 生成GraphBatch供模型输入
+        1. 实体特征编码（10维）
+        2. 邻接矩阵构建（稀疏异构图）
+        3. GraphBatch数据结构生成
     
-    节点特征维度：10
-        - 位置(x, y)：2
-        - 速度(vx, vy)：2
-        - 尺寸(w, h)：2
-        - 停止线距离：1
-        - 类型one-hot：3
+    Args:
+        feature_dim: 特征维度（默认10）
+        r_car_car: 车辆-车辆连接半径（米）
+        r_car_light: 车辆-交通灯连接半径（米）
+        r_car_stop: 车辆-停止线连接半径（米）
     """
     
     def __init__(
         self,
-        r_spatial: float = 50.0,        # 空间连接半径（米）
-        r_car_car: float = 30.0,        # 车-车连接半径
-        r_car_light: float = 50.0,      # 车-灯连接半径
-        r_car_stop: float = 100.0,      # 车-停止线连接半径
-        input_dim: int = 10,            # 节点特征维度
+        feature_dim: int = 10,
+        r_car_car: float = 30.0,
+        r_car_light: float = 50.0,
+        r_car_stop: float = 100.0,
     ):
-        """
-        初始化图构建器
-        
-        Args:
-            r_spatial: 默认空间连接半径
-            r_car_car: 车辆间连接半径
-            r_car_light: 车辆-交通灯连接半径
-            r_car_stop: 车辆-停止线连接半径
-            input_dim: 节点特征维度（默认10）
-        """
-        self.r_spatial = r_spatial
+        """初始化图构建器"""
+        self.feature_dim = feature_dim
         self.r_car_car = r_car_car
         self.r_car_light = r_car_light
         self.r_car_stop = r_car_stop
-        self.input_dim = input_dim
+        
+        # 实体类型映射
+        self.type_map = {
+            'car': 0,
+            'light': 1,
+            'stop': 2,
+        }
     
-    def build(
-        self,
-        entities: List,
-        scene_id: str = "unknown",
-    ) -> GraphBatch:
+    def encode_entity_features(self, entity: Entity) -> np.ndarray:
         """
-        构建场景图
+        编码单个实体的特征向量（10维）
+        
+        设计依据：Design-ITER-2025-01.md v2.0 §3.1.2
+        
+        特征构成：
+            [0-1]: 位置 (x, y)
+            [2-3]: 速度 (vx, vy) - 仅车辆有效
+            [4-5]: 尺寸 (w, h) - bbox宽高
+            [6]:   停止线距离 d_stop - 仅车辆有效
+            [7-9]: 类型one-hot [car, light, stop]
         
         Args:
-            entities: 实体列表（来自数据加载器）
-            scene_id: 场景ID
+            entity: 实体对象
+        
+        Returns:
+            features: 特征向量 [10]
+        """
+        features = np.zeros(self.feature_dim, dtype=np.float32)
+        
+        # [0-1] 位置
+        features[0] = entity.pos[0]
+        features[1] = entity.pos[1]
+        
+        # [2-3] 速度（仅车辆，其他填0）
+        if entity.type == 'car':
+            # 简化：假设沿y轴运动
+            features[2] = 0.0  # vx
+            features[3] = entity.velocity  # vy
+        else:
+            features[2] = 0.0
+            features[3] = 0.0
+        
+        # [4-5] 尺寸
+        if entity.bbox is not None:
+            w = entity.bbox[2] - entity.bbox[0]
+            h = entity.bbox[3] - entity.bbox[1]
+            features[4] = w
+            features[5] = h
+        elif entity.type == 'car':
+            # 默认车辆尺寸
+            features[4] = 4.0  # 宽度
+            features[5] = 8.0  # 长度
+        elif entity.type == 'stop' and entity.end_pos is not None:
+            # 停止线长度
+            length = np.linalg.norm(entity.end_pos - entity.pos)
+            features[4] = length
+            features[5] = 0.5  # 宽度（线）
+        else:
+            features[4] = 1.0
+            features[5] = 1.0
+        
+        # [6] 停止线距离（仅车辆）
+        if entity.type == 'car':
+            features[6] = entity.d_stop
+        else:
+            features[6] = 999.0 if entity.type == 'light' else 0.0
+        
+        # [7-9] 类型one-hot
+        type_idx = self.type_map.get(entity.type, 0)
+        features[7 + type_idx] = 1.0
+        
+        return features
+    
+    def build_adjacency(
+        self,
+        entities: List[Entity],
+    ) -> Tuple[torch.Tensor, np.ndarray]:
+        """
+        构建邻接矩阵（稀疏COO格式）
+        
+        设计依据：Design-ITER-2025-01.md v2.0 §3.2.2
+        
+        边构建规则：
+            - 车辆-车辆：距离 < r_car_car (30m)
+            - 车辆-交通灯：距离 < r_car_light (50m)
+            - 车辆-停止线：距离 < r_car_stop (100m)
+        
+        Args:
+            entities: 实体列表
+        
+        Returns:
+            edge_index: 边索引 [2, E] (COO格式)
+            edge_distances: 边距离 [E]
+        """
+        N = len(entities)
+        edges = []
+        distances = []
+        
+        for i in range(N):
+            for j in range(i + 1, N):  # 只遍历上三角
+                e_i = entities[i]
+                e_j = entities[j]
+                
+                # 计算距离
+                dist = compute_distance(e_i.pos, e_j.pos)
+                
+                # 判断是否连接
+                should_connect = False
+                
+                # 车辆-车辆
+                if e_i.type == 'car' and e_j.type == 'car':
+                    if dist < self.r_car_car:
+                        should_connect = True
+                
+                # 车辆-交通灯（双向）
+                elif (e_i.type == 'car' and e_j.type == 'light') or \
+                     (e_i.type == 'light' and e_j.type == 'car'):
+                    if dist < self.r_car_light:
+                        should_connect = True
+                
+                # 车辆-停止线（双向）
+                elif (e_i.type == 'car' and e_j.type == 'stop') or \
+                     (e_i.type == 'stop' and e_j.type == 'car'):
+                    if dist < self.r_car_stop:
+                        should_connect = True
+                
+                # 添加边（无向图，添加两个方向）
+                if should_connect:
+                    edges.append([i, j])
+                    edges.append([j, i])
+                    distances.append(dist)
+                    distances.append(dist)
+        
+        if len(edges) == 0:
+            # 没有边，返回空边索引
+            edge_index = torch.zeros((2, 0), dtype=torch.long)
+            edge_distances = np.array([])
+        else:
+            edge_index = torch.tensor(edges, dtype=torch.long).T  # [2, E]
+            edge_distances = np.array(distances, dtype=np.float32)
+        
+        return edge_index, edge_distances
+    
+    def build(self, scene: SceneContext) -> GraphBatch:
+        """
+        构建单个场景图
+        
+        Args:
+            scene: 场景上下文
         
         Returns:
             graph_batch: GraphBatch对象
         """
-        # 1. 提取节点特征
-        x, entity_types, entity_masks = self._extract_node_features(entities)
+        entities = scene.entities
+        N = len(entities)
         
-        # 2. 构建边索引（稀疏邻接矩阵）
-        edge_index = self._build_edges(entities, entity_types)
+        # 1. 编码节点特征
+        features = []
+        entity_types = []
         
-        # 3. 构造GraphBatch
+        for entity in entities:
+            feat = self.encode_entity_features(entity)
+            features.append(feat)
+            entity_types.append(self.type_map[entity.type])
+        
+        x = torch.from_numpy(np.stack(features, axis=0))  # [N, 10]
+        entity_types = torch.tensor(entity_types, dtype=torch.long)  # [N]
+        
+        # 2. 构建邻接矩阵
+        edge_index, edge_distances = self.build_adjacency(entities)
+        
+        # 3. 创建mask（所有实体都有效）
+        entity_masks = torch.ones(N, dtype=torch.bool)
+        
+        # 4. 创建GraphBatch
         graph_batch = GraphBatch(
             x=x,
             edge_index=edge_index,
             entity_types=entity_types,
             entity_masks=entity_masks,
-            scene_id=scene_id,
-            num_nodes=x.size(0),
-            num_edges=edge_index.size(1),
-            entities=entities,
+            edge_attr=torch.from_numpy(edge_distances).unsqueeze(1) if len(edge_distances) > 0 else None,
+            context=scene,
         )
         
         return graph_batch
     
-    def _extract_node_features(
-        self,
-        entities: List,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def build_batch(self, scenes: List[SceneContext]) -> List[GraphBatch]:
         """
-        提取节点特征矩阵
-        
-        设计依据：Design §3.1.2
-        
-        特征组成（10维）：
-            - 位置(x, y)：2维
-            - 速度(vx, vy)：2维（车辆有效，其他填0）
-            - 尺寸(w, h)：2维
-            - 停止线距离：1维（车辆有效，其他填999）
-            - 类型one-hot：3维（car, light, stop）
-        
-        Returns:
-            x: [N, 10]
-            entity_types: [N]
-            entity_masks: [N]
-        """
-        N = len(entities)
-        x = torch.zeros(N, self.input_dim)
-        entity_types = torch.zeros(N, dtype=torch.long)
-        entity_masks = torch.ones(N, dtype=torch.bool)
-        
-        type_map = {'car': 0, 'light': 1, 'stop': 2}
-        
-        for i, entity in enumerate(entities):
-            # 位置
-            x[i, 0:2] = torch.tensor(entity.position)
-            
-            # 速度（仅车辆）
-            if entity.type == 'car':
-                vx = entity.velocity * np.cos(np.radians(entity.heading))
-                vy = entity.velocity * np.sin(np.radians(entity.heading))
-                x[i, 2:4] = torch.tensor([vx, vy])
-            else:
-                x[i, 2:4] = 0.0  # 非车辆填0
-            
-            # 尺寸
-            if entity.bbox is not None:
-                x1, y1, x2, y2 = entity.bbox
-                w = x2 - x1
-                h = y2 - y1
-                x[i, 4:6] = torch.tensor([w, h])
-            else:
-                x[i, 4:6] = torch.tensor([10.0, 10.0])  # 默认尺寸
-            
-            # 停止线距离（仅车辆）
-            if entity.type == 'car' and hasattr(entity, 'd_stop'):
-                x[i, 6] = entity.d_stop
-            else:
-                x[i, 6] = 999.0  # 非车辆填大值
-            
-            # 类型one-hot
-            entity_type = type_map[entity.type]
-            x[i, 7 + entity_type] = 1.0
-            
-            # 记录类型索引
-            entity_types[i] = entity_type
-        
-        return x, entity_types, entity_masks
-    
-    def _build_edges(
-        self,
-        entities: List,
-        entity_types: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        构建稀疏邻接矩阵（边索引）
-        
-        设计依据：Design §3.2.2 + §3.3.1
-        
-        边类型：
-            1. 车辆-车辆（距离<30m）
-            2. 车辆-交通灯（距离<50m）
-            3. 车辆-停止线（距离<100m）
-        
-        Returns:
-            edge_index: [2, E] - [source_nodes, target_nodes]
-        """
-        N = len(entities)
-        edges = []
-        
-        for i in range(N):
-            for j in range(N):
-                if i == j:
-                    continue  # 自环后续在GAT层添加
-                
-                e_i = entities[i]
-                e_j = entities[j]
-                
-                # 计算距离
-                dist = np.linalg.norm(
-                    np.array(e_i.position) - np.array(e_j.position)
-                )
-                
-                # 根据实体类型和距离判断是否连接
-                should_connect = False
-                
-                if e_i.type == 'car' and e_j.type == 'car':
-                    # 车-车：<30m
-                    if dist < self.r_car_car:
-                        should_connect = True
-                
-                elif e_i.type == 'car' and e_j.type == 'light':
-                    # 车-灯：<50m
-                    if dist < self.r_car_light:
-                        should_connect = True
-                
-                elif e_i.type == 'light' and e_j.type == 'car':
-                    # 灯-车：<50m（双向）
-                    if dist < self.r_car_light:
-                        should_connect = True
-                
-                elif e_i.type == 'car' and e_j.type == 'stop':
-                    # 车-停止线：<100m
-                    if dist < self.r_car_stop:
-                        should_connect = True
-                
-                elif e_i.type == 'stop' and e_j.type == 'car':
-                    # 停止线-车：<100m（双向）
-                    if dist < self.r_car_stop:
-                        should_connect = True
-                
-                if should_connect:
-                    edges.append([i, j])
-        
-        if len(edges) > 0:
-            edge_index = torch.tensor(edges, dtype=torch.long).T  # [2, E]
-        else:
-            # 空图（没有边）
-            edge_index = torch.empty(2, 0, dtype=torch.long)
-        
-        return edge_index
-    
-    def build_batch(
-        self,
-        scenes_data: List[Dict],
-    ) -> List[GraphBatch]:
-        """
-        批量构建场景图
+        构建批量场景图
         
         Args:
-            scenes_data: 场景数据列表（来自DataLoader）
+            scenes: 场景列表
         
         Returns:
-            graph_batches: GraphBatch列表
+            graphs: GraphBatch列表
         """
-        graph_batches = []
+        graphs = []
+        for scene in scenes:
+            graph = self.build(scene)
+            graphs.append(graph)
         
-        for scene in scenes_data:
-            entities = scene['entities']
-            scene_id = scene.get('scene_id', 'unknown')
-            
-            graph_batch = self.build(entities, scene_id)
-            graph_batches.append(graph_batch)
-        
-        return graph_batches
+        return graphs
 
 
-def compute_stopline_distance(
-    car_position: Tuple[float, float],
-    stopline_endpoints: Tuple[Tuple[float, float], Tuple[float, float]],
-) -> float:
-    """
-    计算车辆到停止线的距离（点到线段的距离）
-    
-    设计依据：Design §3.1.2
-    
-    数学形式：
-        d = ||(p - s1) × (s2 - s1)|| / ||s2 - s1||
-    
-    Args:
-        car_position: 车辆中心坐标(x, y)
-        stopline_endpoints: 停止线端点((x1, y1), (x2, y2))
-    
-    Returns:
-        distance: 到停止线的有向距离（正数=未过线，负数=已过线）
-    """
-    p = np.array(car_position)
-    s1 = np.array(stopline_endpoints[0])
-    s2 = np.array(stopline_endpoints[1])
-    
-    # 向量投影
-    line_vec = s2 - s1
-    point_vec = p - s1
-    
-    # 叉积（2D中为标量）
-    cross = point_vec[0] * line_vec[1] - point_vec[1] * line_vec[0]
-    
-    # 距离
-    line_length = np.linalg.norm(line_vec)
-    if line_length < 1e-6:
-        return 0.0
-    
-    distance = abs(cross) / line_length
-    
-    # 判断是否过线（使用点积判断方向）
-    dot = np.dot(point_vec, line_vec)
-    if dot > line_length ** 2:
-        # 车辆在停止线后方（已过线）
-        distance = -distance
-    
-    return distance
-
-
-# ============ 导出接口 ============
+# 导出接口
 __all__ = [
     'GraphBuilder',
-    'GraphBatch',
-    'compute_stopline_distance',
 ]
