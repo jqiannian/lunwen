@@ -146,3 +146,5 @@ class RuleFocusedAttention(nn.Module):
 
 # 导出接口
 __all__ = ['RuleFocusedAttention']
+
+

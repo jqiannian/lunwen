@@ -1,10 +1,11 @@
-data
-models
 reports
 logs
 artifacts
 tests
-
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.ai_sandbox/
 
 .vscode/
 .idea/
@@ -16,3 +17,4 @@ tests
 .cursorrules/java.mdc
 .cursorrules/vue.mdc
 .cursorrules/project.mdc
+

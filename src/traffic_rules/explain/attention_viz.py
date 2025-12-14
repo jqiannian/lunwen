@@ -6,8 +6,10 @@
 """
 
 import cv2
+import json
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 import torch
 from typing import List, Tuple, Optional, Dict
 from pathlib import Path
@@ -163,20 +165,20 @@ def generate_violation_report(
         save_path: 保存路径
     """
     report = {
-        'scene_id': scene_id,
-        'timestamp': str(pd.Timestamp.now()),
-        'violations': violations,
-        'summary': {
-            'total_violations': len(violations),
-            'avg_confidence': np.mean([v['final_score'] for v in violations]) if violations else 0.0,
-        }
+        "scene_id": scene_id,
+        "timestamp": str(pd.Timestamp.now()),
+        "violations": violations,
+        "summary": {
+            "total_violations": len(violations),
+            "avg_confidence": float(np.mean([v["final_score"] for v in violations])) if violations else 0.0,
+        },
     }
     
     save_path = Path(save_path)
     save_path.parent.mkdir(parents=True, exist_ok=True)
     
-    with open(save_path, 'w') as f:
-        json.dump(report, f, indent=2)
+    with open(save_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
     
     return report
 

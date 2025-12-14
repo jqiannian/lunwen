@@ -1,3 +1,10 @@
+# DEPRECATED（已废弃）：本文件不再作为安装入口
+# 请使用 conda-forge 环境文件：
+# - environment.yml（运行）
+# - environment-dev.yml（开发）
+#
+# 保留本文件仅作为历史参考（便于回溯 pip 版本口径）。
+#
 # Traffic Rules MVP Dependencies
 # Generated: 2025-12-03
 # Python: 3.11+
@@ -72,6 +79,8 @@ pip-audit>=2.7.0,<3.0.0
 # === Memory & Performance Profiling (可选) ===
 # psutil>=5.9.0  # CPU/内存监控
 # nvidia-ml-py>=12.535.0  # GPU监控
+
+
 
 
 

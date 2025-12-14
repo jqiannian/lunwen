@@ -1,4 +1,9 @@
 [tool.poetry]
+# NOTE（重要）：依赖管理已迁移到 conda-forge
+# - 运行环境：environment.yml
+# - 开发环境：environment-dev.yml
+#
+# 本文件仅保留：项目元信息 + 代码质量工具配置（black/isort/ruff/mypy/pytest）。
 name = "traffic-rules-mvp"
 version = "0.1.0"
 description = "Red light stop anomaly detection MVP skeleton"
