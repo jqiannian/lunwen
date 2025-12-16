@@ -8,8 +8,8 @@
 | 技术负责人 | TODO |
 | 状态 | 草稿 / 进行中 / 完成 |
 | 最后更新时间 | TODO |
-| 关联需求 | docs/requirements/ITER-YYYY-N.md |
-| 关联设计 | docs/design/ITER-YYYY-N.md |
+| 关联需求 | docs/iterations/ITER-YYYY-N/REQUIREMENT.md |
+| 关联设计 | docs/iterations/ITER-YYYY-N/DESIGN.md |
 
 ## 1. 环境信息
 | 环境 | 地址 | 版本 | 负责人 | 备注 |

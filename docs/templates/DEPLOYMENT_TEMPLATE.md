@@ -8,9 +8,9 @@
 | 运维负责人 | TODO |
 | 状态 | 草稿 / 评审中 / 待发布 / 已发布 |
 | 最后更新时间 | TODO |
-| 关联需求 | docs/requirements/ITER-YYYY-N.md |
-| 关联设计 | docs/design/ITER-YYYY-N.md |
-| 关联测试 | docs/testing/ITER-YYYY-N.md |
+| 关联需求 | docs/iterations/ITER-YYYY-N/REQUIREMENT.md |
+| 关联设计 | docs/iterations/ITER-YYYY-N/DESIGN.md |
+| 关联测试 | docs/iterations/ITER-YYYY-N/TESTING.md |
 
 ## 1. 生产环境架构
 - 拓扑图（服务、网络、依赖）

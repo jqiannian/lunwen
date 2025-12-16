@@ -8,12 +8,12 @@
 | 需求负责人 | 产品经理（待指派） |
 | 状态 | 草稿 |
 | 最后更新时间 | 2025-11-30 |
-| 关联设计 | docs/design/Design-ITER-2025-01.md |
-| 关联测试 | docs/testing/Testing-ITER-2025-01.md |
+| 关联设计 | docs/iterations/ITER-2025-01/DESIGN.md |
+| 关联测试 | docs/iterations/ITER-2025-01/TESTING.md |
 | 审批记录 | 待评审 |
 
 ## 1. 原始用户需求
-- 来源：`docs/01-需求文档/user-stories/最简模型2.md`、`docs/01-需求文档/user-stories/论文提纲.md`
+- 来源：`docs/references/user-stories/最简模型2.md`、`docs/references/user-stories/论文提纲.md`
 - 背景：需要在流程性交通场景中进行无监督异常检测，首要示例为“红灯停”规则。
 - 用户痛点：
   - 缺少高质量的数据处理管道及可扩展的规则注入框架。

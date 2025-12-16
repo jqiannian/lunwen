@@ -2,7 +2,7 @@
 
 > 本文档由根目录历史文件 `TRAINING_DATAFLOW_DIAGRAM.md` 迁移而来，作为“架构层”稳定文档。
 > 
-> 设计依据：`docs/design/Design-ITER-2025-01.md` §3.5.1
+> 设计依据：`docs/iterations/ITER-2025-01/DESIGN.md` §3.5.1
 
 ---
 

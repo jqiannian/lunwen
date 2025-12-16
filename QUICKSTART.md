@@ -241,10 +241,10 @@ runtime:
 
 ## 技术支持
 
-- **文档**: `docs/development/Development-ITER-2025-01.md`
-- **设计文档**: `docs/design/Design-ITER-2025-01.md`
-- **技术勘误**: `docs/design/TECHNICAL_CORRECTIONS.md`
-- **实施进度**: `docs/development/IMPLEMENTATION_PROGRESS.md`
+- **文档**: `docs/iterations/ITER-2025-01/DEVELOPMENT.md`
+- **设计文档**: `docs/iterations/ITER-2025-01/DESIGN.md`
+- **技术勘误**: `docs/archive/design/TECHNICAL_CORRECTIONS.md`
+- **实施进度**: `docs/archive/development/IMPLEMENTATION_PROGRESS.md`
 
 ---
 

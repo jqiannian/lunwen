@@ -20,10 +20,10 @@
 | 文档类型 | 目标 | 具体文件 | 责任人 | 状态 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | README | 项目导航 | README.md | TODO | TODO | 需随迭代更新 |
-| 需求文档 | TODO | docs/requirements/ITER-XXX.md | TODO | TODO | 链接原始需求 |
-| 设计文档 | TODO | docs/design/ITER-XXX.md | TODO | TODO | 附架构图 |
-| 开发文档 | TODO | docs/development/ITER-XXX.md | TODO | TODO | 日志需每日更新 |
-| 测试文档 | TODO | docs/testing/ITER-XXX.md | TODO | TODO | 附缺陷追踪 |
+| 需求文档 | TODO | docs/iterations/ITER-XXX/REQUIREMENT.md | TODO | TODO | 链接原始需求 |
+| 设计文档 | TODO | docs/iterations/ITER-XXX/DESIGN.md | TODO | TODO | 附架构图 |
+| 开发文档 | TODO | docs/iterations/ITER-XXX/DEVELOPMENT.md | TODO | TODO | 日志需每日更新 |
+| 测试文档 | TODO | docs/iterations/ITER-XXX/TESTING.md | TODO | TODO | 附缺陷追踪 |
 | 部署文档 | TODO | docs/deployment/ITER-XXX.md | TODO | TODO | 含回滚策略 |
 | 用户文档 | TODO | docs/user-guide/VERSION.md | TODO | TODO | 附测试账号 |
 | 运维文档 | TODO | docs/operations/VERSION.md | TODO | TODO | 含应急方案 |

@@ -12,7 +12,7 @@
   - `QUICKSTART.md`
   - `docs/guides/TRAINING_GUIDE.md`
 - **我想看整体架构/数据流**：
-  - `docs/design/Design-ITER-2025-01.md`（完整设计，权威来源）
+  - `docs/iterations/ITER-2025-01/DESIGN.md`（完整设计，权威来源）
   - `docs/architecture/DATA_FLOW.md`（训练数据流图）
 - **我想看某次迭代的定版资料**：
   - `docs/iterations/ITER-2025-01/`
@@ -42,7 +42,7 @@
 ### 4.2 使用指南（guides）
 - `docs/guides/TRAINING_GUIDE.md`
 - `docs/guides/TESTING_GUIDE.md`
-- （待补）`docs/guides/INSTALLATION_CONDA.md`
+- `docs/guides/INSTALLATION_CONDA.md`
 
 ### 4.3 迭代（iterations）
 - `docs/iterations/ITER-2025-01/REQUIREMENT.md`
@@ -54,7 +54,7 @@
 - `docs/templates/`
 
 ### 4.5 参考资料（references）
-- `docs/requirement/user-stories/`（后续逐步搬迁到 `docs/references/`）
+- `docs/references/user-stories/`
 
 ### 4.6 归档（archive）
 - `docs/archive/SESSION_SUMMARIES/`

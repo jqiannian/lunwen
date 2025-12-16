@@ -11,7 +11,7 @@
 - 文档总索引：`docs/README.md`
 - 训练指南：`docs/guides/TRAINING_GUIDE.md`
 - 测试指南：`docs/guides/TESTING_GUIDE.md`
-- 架构/数据流：`docs/architecture/DATA_FLOW.md`、`docs/design/Design-ITER-2025-01.md`
+- 架构/数据流：`docs/architecture/DATA_FLOW.md`、`docs/iterations/ITER-2025-01/DESIGN.md`
 
 ## MVP常用命令
 

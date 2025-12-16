@@ -8,8 +8,8 @@
 | 需求负责人 | TODO |
 | 状态 | 草稿 / 评审中 / 已生效 |
 | 最后更新时间 | TODO: YYYY-MM-DD |
-| 关联设计 | TODO: docs/design/ITER-YYYY-N.md |
-| 关联测试 | TODO: docs/testing/ITER-YYYY-N.md |
+| 关联设计 | TODO: docs/iterations/ITER-YYYY-N/DESIGN.md |
+| 关联测试 | TODO: docs/iterations/ITER-YYYY-N/TESTING.md |
 | 审批记录 | TODO: 评审人+意见 |
 
 ## 1. 原始用户需求

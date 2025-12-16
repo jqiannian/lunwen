@@ -10,9 +10,9 @@
 | 技术负责人 | 待指派 |
 | 状态 | 草稿 |
 | 最后更新时间 | 2025-11-30 |
-| 关联需求 | `docs/requirement/iterations/Requirement-ITER-2025-01.md` |
-| 关联设计 | `docs/design/Design-ITER-2025-01.md` |
-| 关联测试 | `docs/testing/Testing-ITER-2025-01.md` |
+| 关联需求 | `docs/iterations/ITER-2025-01/REQUIREMENT.md` |
+| 关联设计 | `docs/iterations/ITER-2025-01/DESIGN.md` |
+| 关联测试 | `docs/iterations/ITER-2025-01/TESTING.md` |
 
 ## 1. 里程碑与交付
 | 日期 | 里程碑 | 说明 / 交付物 |

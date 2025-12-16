@@ -329,7 +329,7 @@ main() {
     echo "  4. 运行测试:"
     echo "     python tools/test_red_light.py run --scenario all"
     echo ""
-    log_info "查看文档: docs/development/Development-ITER-2025-01.md"
+    log_info "查看文档: docs/iterations/ITER-2025-01/DEVELOPMENT.md"
     echo ""
 }
 

@@ -10,8 +10,8 @@
 | QA 负责人 | 待指派 |
 | 状态 | 草稿 |
 | 最后更新时间 | 2025-11-30 |
-| 关联需求 | `docs/requirement/iterations/Requirement-ITER-2025-01.md` |
-| 关联开发 | `docs/development/Development-ITER-2025-01.md` |
+| 关联需求 | `docs/iterations/ITER-2025-01/REQUIREMENT.md` |
+| 关联开发 | `docs/iterations/ITER-2025-01/DEVELOPMENT.md` |
 | 关联部署 | 待生成 |
 
 ## 1. 测试环境（占位）

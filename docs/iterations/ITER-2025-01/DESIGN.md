@@ -11,11 +11,11 @@
 | 架构负责人 | 算法架构师（AI） |
 | 状态 | ✅ 重构完成（可进入实现阶段） |
 | 最后更新时间 | 2025-12-03（系统性重构） |
-| 关联需求 | `docs/requirement/iterations/Requirement-ITER-2025-01.md` |
-| 关联开发 | `docs/development/ITER-2025-ROADMAP.md` |
-| 关联测试 | `docs/testing/Testing-ITER-2025-01.md` |
-| 关联算法方案 | `docs/design/ALGORITHM_DESIGN_OPTIONS.md` |
-| 重构追踪 | `docs/design/DESIGN_REFACTOR_TRACKER.md` |
+| 关联需求 | `docs/iterations/ITER-2025-01/REQUIREMENT.md` |
+| 关联开发 | `docs/iterations/ITER-2025-01/DEVELOPMENT.md` |
+| 关联测试 | `docs/iterations/ITER-2025-01/TESTING.md` |
+| 关联算法方案 | `docs/archive/design/ALGORITHM_DESIGN_OPTIONS.md` |
+| 重构追踪 | `docs/archive/design/DESIGN_REFACTOR_TRACKER.md` |
 | 审批记录 | 2025-12-03 算法细化完成，采用方案1（多阶段GAT+硬约束）<br/>2025-12-03 系统性重构完成，修正10个设计问题 |
 
 ## 1. 系统设计
@@ -215,7 +215,7 @@ config
 
 ## 3. 详细设计
 
-> **算法方案选择**：经评审，采用"多阶段注意力增强GAT + 硬约束规则融合"方案（详见 `docs/design/ALGORITHM_DESIGN_OPTIONS.md` 方案1）。本节为核心算法的工程实现细节。
+> **算法方案选择**：经评审，采用"多阶段注意力增强GAT + 硬约束规则融合"方案（详见 `docs/archive/design/ALGORITHM_DESIGN_OPTIONS.md` 方案1）。本节为核心算法的工程实现细节。
 
 ### 3.1 数据摄取层
 
@@ -286,7 +286,7 @@ for car in cars:
 ### 3.3 多阶段注意力架构（核心算法）
 
 > **技术勘误修正（2025-12-03）**：本节增加三阶段注意力的详细实现细节，明确局部→全局→规则聚焦的具体机制。  
-> 详见：`docs/design/TECHNICAL_CORRECTIONS.md` 问题5
+> 详见：`docs/archive/design/TECHNICAL_CORRECTIONS.md` 问题5
 
 #### 3.3.1 阶段1：局部关系编码（Multi-Head GAT）
 
@@ -804,7 +804,7 @@ $$
 ### 3.4 规则引擎与约束损失
 
 > **技术勘误修正（2025-12-03）**：原规则分数公式使用离散指示函数 $\mathbb{1}[\text{red}]$，不可导致梯度消失。现改用Gumbel-Softmax软化，确保全程可导。  
-> 详见：`docs/design/TECHNICAL_CORRECTIONS.md` 问题1
+> 详见：`docs/archive/design/TECHNICAL_CORRECTIONS.md` 问题1
 
 #### 3.4.1 规则形式化定义
 
@@ -1235,7 +1235,7 @@ def train(config):
 #### 3.5.2 超参数配置
 
 > **技术勘误修正（2025-12-03）**：补充超参数选择的文献依据和决策理由。  
-> 详见：`docs/design/TECHNICAL_CORRECTIONS.md` 问题6
+> 详见：`docs/archive/design/TECHNICAL_CORRECTIONS.md` 问题6
 
 **超参数选择依据**：
 
@@ -1342,7 +1342,7 @@ $$
 #### 3.5.3 训练收敛指标与评估
 
 > **技术勘误修正（2025-12-03）**：补充量化训练指标、收敛标准、超参数敏感度分析和消融实验计划。  
-> 详见：`docs/design/TECHNICAL_CORRECTIONS.md` 问题3
+> 详见：`docs/archive/design/TECHNICAL_CORRECTIONS.md` 问题3
 
 **收敛指标**：
 
@@ -1875,7 +1875,7 @@ logger.warning(
 ## 5. 安全 / 性能 / 可运维性
 
 > **技术勘误修正（2025-12-03）**：补充GPU显存/CPU内存需求的详细估算和性能优化建议。  
-> 详见：`docs/design/TECHNICAL_CORRECTIONS.md` 问题2
+> 详见：`docs/archive/design/TECHNICAL_CORRECTIONS.md` 问题2
 
 ### 5.1 安全
 - 禁止硬编码凭据；规则 DSL 在加载时进行 schema 校验，防止执行任意代码。

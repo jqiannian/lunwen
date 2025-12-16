@@ -8,8 +8,8 @@
 | QA 负责人 | TODO |
 | 状态 | 草稿 / 执行中 / 完成 |
 | 最后更新时间 | TODO |
-| 关联需求 | docs/requirements/ITER-YYYY-N.md |
-| 关联开发 | docs/development/ITER-YYYY-N.md |
+| 关联需求 | docs/iterations/ITER-YYYY-N/REQUIREMENT.md |
+| 关联开发 | docs/iterations/ITER-YYYY-N/DEVELOPMENT.md |
 | 关联部署 | docs/deployment/ITER-YYYY-N.md |
 
 ## 1. 测试环境

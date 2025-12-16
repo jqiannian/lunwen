@@ -8,9 +8,9 @@
 | 架构负责人 | TODO |
 | 状态 | 草稿 / 评审中 / 已生效 |
 | 最后更新时间 | TODO: YYYY-MM-DD |
-| 关联需求 | docs/requirements/ITER-YYYY-N.md |
-| 关联开发 | docs/development/ITER-YYYY-N.md |
-| 关联测试 | docs/testing/ITER-YYYY-N.md |
+| 关联需求 | docs/iterations/ITER-YYYY-N/REQUIREMENT.md |
+| 关联开发 | docs/iterations/ITER-YYYY-N/DEVELOPMENT.md |
+| 关联测试 | docs/iterations/ITER-YYYY-N/TESTING.md |
 | 审批记录 | TODO |
 
 ## 1. 系统设计
