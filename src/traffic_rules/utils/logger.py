@@ -50,8 +50,11 @@ def setup_logger(
     else:
         log_dir = Path(log_dir)
     
-    # 创建日志目录
-    log_dir.mkdir(parents=True, exist_ok=True)
+    # 创建日志目录（仅当启用文件日志时需要）
+    # 说明：在某些受限环境（例如沙盒/只读目录）下，创建 logs/ 可能失败。
+    # 因此仅在需要写文件日志时才创建目录，避免影响仅控制台输出的场景。
+    if enable_file:
+        log_dir.mkdir(parents=True, exist_ok=True)
     
     # 配置structlog
     structlog.configure(

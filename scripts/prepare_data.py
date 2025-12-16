@@ -20,9 +20,12 @@ Usage:
 
 import argparse
 import json
+import os
 import random
 import shutil
+import time
 import zipfile
+from collections import Counter
 from pathlib import Path
 
 import cv2
@@ -34,8 +37,362 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.traffic_rules.utils.logger import get_logger
+from src.traffic_rules.utils.logger import setup_logger
 
+# 仅控制台输出，避免在受限环境创建 logs/ 目录导致失败
+setup_logger(__name__, enable_file=False, enable_console=True)
 logger = get_logger(__name__)
+
+def summarize_bdd100k(
+    external_root: Path,
+    output_dir: Path,
+    max_label_files: int = 0,
+    sample_images: int = 50,
+):
+    """
+    生成 BDD100K 数据集特征 summary（从 zip 直接读取，不要求预先解压）。
+
+    Args:
+        external_root: 外部数据集根目录（应包含 BDD100K/）
+        output_dir: 输出目录（例如 data/BDD100K）
+        max_label_files: 最多处理多少个 label JSON。0 表示全部（80k 可能耗时较长）
+        sample_images: 从 images zip 中抽样解码多少张图片用于分辨率统计
+    """
+    t0 = time.time()
+
+    bdd_root = external_root / "BDD100K"
+    labels_zip = bdd_root / "bdd100k_labels.zip"
+    images_zip = bdd_root / "bdd100k_images.zip"
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if not labels_zip.exists():
+        raise FileNotFoundError(f"找不到 bdd100k_labels.zip: {labels_zip}")
+    if not images_zip.exists():
+        raise FileNotFoundError(f"找不到 bdd100k_images.zip: {images_zip}")
+
+    logger.info("开始生成BDD100K summary", labels_zip=str(labels_zip), images_zip=str(images_zip))
+
+    # --------- 1) 读取 zip 成员列表（不解压）---------
+    with zipfile.ZipFile(labels_zip) as zf_labels:
+        label_members = [n for n in zf_labels.namelist() if n.lower().endswith(".json")]
+    with zipfile.ZipFile(images_zip) as zf_images:
+        image_members = [n for n in zf_images.namelist() if n.lower().endswith(".jpg")]
+
+    # 建立 images 的快速查找集合（用于抽样一致性核对）
+    image_member_set = set(image_members)
+
+    def _split_of_label_member(name: str) -> str:
+        # 典型路径：bdd100k/labels/100k/train/<id>.json
+        if "/train/" in name:
+            return "train"
+        if "/val/" in name:
+            return "val"
+        if "/test/" in name:
+            return "test"
+        return "unknown"
+
+    def _corresponding_image_member(label_member: str) -> str | None:
+        # label: .../train/xxxx.json  -> image: bdd100k/images/100k/train/xxxx.jpg
+        # 若 split 不明，返回 None
+        split = _split_of_label_member(label_member)
+        if split == "unknown":
+            return None
+        stem = Path(label_member).stem
+        return f"bdd100k/images/100k/{split}/{stem}.jpg"
+
+    label_count_by_split = Counter(_split_of_label_member(n) for n in label_members)
+    image_count_by_split = Counter(
+        ("train" if "/train/" in n else "val" if "/val/" in n else "test" if "/test/" in n else "unknown")
+        for n in image_members
+    )
+
+    # --------- 2) 统计 labels 内容（逐 JSON 解析）---------
+    scene_counter: Counter[str] = Counter()
+    timeofday_counter: Counter[str] = Counter()
+    weather_counter: Counter[str] = Counter()
+    category_counter: Counter[str] = Counter()
+    traffic_light_color_counter: Counter[str] = Counter()
+    occluded_counter: Counter[str] = Counter()
+    truncated_counter: Counter[str] = Counter()
+
+    num_files_processed = 0
+    num_objects_total = 0
+    num_frames_total = 0
+    per_image_object_counts: list[int] = []
+
+    # bbox stats（简单统计）
+    bbox_w_min = float("inf")
+    bbox_h_min = float("inf")
+    bbox_area_min = float("inf")
+    bbox_w_max = 0.0
+    bbox_h_max = 0.0
+    bbox_area_max = 0.0
+    bbox_w_sum = 0.0
+    bbox_h_sum = 0.0
+    bbox_area_sum = 0.0
+    bbox_count = 0
+
+    # 抽样一致性：labels->images 是否存在对应 jpg
+    match_check_total = 0
+    match_check_hit = 0
+
+    # 决定处理多少个 label 文件
+    target_members = label_members
+    if max_label_files and max_label_files > 0:
+        target_members = label_members[:max_label_files]
+
+    with zipfile.ZipFile(labels_zip) as zf_labels:
+        for member in tqdm(target_members, desc="解析BDD100K labels(JSON)", unit="file"):
+            try:
+                with zf_labels.open(member) as fp:
+                    data = json.load(fp)
+            except Exception as e:
+                logger.warning("解析label失败，已跳过", member=member, error=str(e))
+                continue
+
+            num_files_processed += 1
+
+            # 顶层 attributes: scene/timeofday/weather
+            attrs = data.get("attributes", {}) if isinstance(data, dict) else {}
+            if isinstance(attrs, dict):
+                scene = attrs.get("scene")
+                tod = attrs.get("timeofday")
+                weather = attrs.get("weather")
+                if scene:
+                    scene_counter[str(scene)] += 1
+                if tod:
+                    timeofday_counter[str(tod)] += 1
+                if weather:
+                    weather_counter[str(weather)] += 1
+
+            frames = data.get("frames", []) if isinstance(data, dict) else []
+            if isinstance(frames, list):
+                num_frames_total += len(frames)
+                # BDD100K images label 通常只有 1 帧
+                if frames:
+                    f0 = frames[0]
+                    objects = f0.get("objects", []) if isinstance(f0, dict) else []
+                    if isinstance(objects, list):
+                        per_image_object_counts.append(len(objects))
+                        for obj in objects:
+                            if not isinstance(obj, dict):
+                                continue
+                            cat = obj.get("category")
+                            if cat:
+                                category_counter[str(cat)] += 1
+                            obj_attrs = obj.get("attributes", {})
+                            if isinstance(obj_attrs, dict):
+                                if "occluded" in obj_attrs:
+                                    occluded_counter[str(obj_attrs.get("occluded"))] += 1
+                                if "truncated" in obj_attrs:
+                                    truncated_counter[str(obj_attrs.get("truncated"))] += 1
+                                # trafficLightColor 只对交通灯更有意义
+                                if "trafficLightColor" in obj_attrs:
+                                    traffic_light_color_counter[str(obj_attrs.get("trafficLightColor"))] += 1
+                            box2d = obj.get("box2d")
+                            if isinstance(box2d, dict):
+                                try:
+                                    w = float(box2d["x2"]) - float(box2d["x1"])
+                                    h = float(box2d["y2"]) - float(box2d["y1"])
+                                    if w < 0 or h < 0:
+                                        continue
+                                    area = w * h
+                                    bbox_count += 1
+                                    bbox_w_sum += w
+                                    bbox_h_sum += h
+                                    bbox_area_sum += area
+                                    bbox_w_min = min(bbox_w_min, w)
+                                    bbox_h_min = min(bbox_h_min, h)
+                                    bbox_area_min = min(bbox_area_min, area)
+                                    bbox_w_max = max(bbox_w_max, w)
+                                    bbox_h_max = max(bbox_h_max, h)
+                                    bbox_area_max = max(bbox_area_max, area)
+                                except Exception:
+                                    pass
+
+                            num_objects_total += 1
+
+            # labels->images 对应性（抽样检查：每 200 个检查一次，避免太慢）
+            if num_files_processed % 200 == 0:
+                img_member = _corresponding_image_member(member)
+                if img_member:
+                    match_check_total += 1
+                    if img_member in image_member_set:
+                        match_check_hit += 1
+
+    # bbox 均值
+    bbox_stats = {
+        "count": bbox_count,
+        "width_min": (None if bbox_count == 0 else bbox_w_min),
+        "width_max": (None if bbox_count == 0 else bbox_w_max),
+        "width_mean": (None if bbox_count == 0 else bbox_w_sum / bbox_count),
+        "height_min": (None if bbox_count == 0 else bbox_h_min),
+        "height_max": (None if bbox_count == 0 else bbox_h_max),
+        "height_mean": (None if bbox_count == 0 else bbox_h_sum / bbox_count),
+        "area_min": (None if bbox_count == 0 else bbox_area_min),
+        "area_max": (None if bbox_count == 0 else bbox_area_max),
+        "area_mean": (None if bbox_count == 0 else bbox_area_sum / bbox_count),
+    }
+
+    # 每图对象数统计（均值/最小/最大）
+    if per_image_object_counts:
+        o_min = min(per_image_object_counts)
+        o_max = max(per_image_object_counts)
+        o_mean = sum(per_image_object_counts) / len(per_image_object_counts)
+    else:
+        o_min = o_max = o_mean = None
+
+    # --------- 3) 抽样解码图片，统计分辨率 ---------
+    resolutions: Counter[str] = Counter()
+    sampled_images = 0
+    decode_fail = 0
+
+    if sample_images and sample_images > 0:
+        # 从 zip 成员头部开始抽样（确定性，便于复现）
+        sample_list = image_members[:sample_images]
+        with zipfile.ZipFile(images_zip) as zf_images:
+            for member in tqdm(sample_list, desc="抽样解码images(JPG)", unit="img"):
+                try:
+                    with zf_images.open(member) as fp:
+                        buf = fp.read()
+                    arr = np.frombuffer(buf, dtype=np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        decode_fail += 1
+                        continue
+                    h, w = img.shape[:2]
+                    resolutions[f"{w}x{h}"] += 1
+                    sampled_images += 1
+                except Exception:
+                    decode_fail += 1
+                    continue
+
+    # --------- 4) 汇总输出 ---------
+    summary = {
+        "external_root": str(external_root),
+        "bdd_root": str(bdd_root),
+        "inputs": {
+            "labels_zip": str(labels_zip),
+            "images_zip": str(images_zip),
+        },
+        "zip_members": {
+            "labels_json_total": len(label_members),
+            "labels_json_by_split": dict(label_count_by_split),
+            "images_jpg_total": len(image_members),
+            "images_jpg_by_split": dict(image_count_by_split),
+        },
+        "labels_stats": {
+            "processed_label_files": num_files_processed,
+            "max_label_files_arg": max_label_files,
+            "frames_total": num_frames_total,
+            "objects_total": num_objects_total,
+            "objects_per_image": {
+                "count_images": len(per_image_object_counts),
+                "min": o_min,
+                "max": o_max,
+                "mean": o_mean,
+            },
+            "attributes_distribution": {
+                "scene": dict(scene_counter),
+                "timeofday": dict(timeofday_counter),
+                "weather": dict(weather_counter),
+            },
+            "category_distribution": dict(category_counter),
+            "traffic_light_color_distribution": dict(traffic_light_color_counter),
+            "occluded_distribution": dict(occluded_counter),
+            "truncated_distribution": dict(truncated_counter),
+            "bbox_stats": bbox_stats,
+            "label_to_image_match_check": {
+                "checked": match_check_total,
+                "matched": match_check_hit,
+                "match_rate": (None if match_check_total == 0 else match_check_hit / match_check_total),
+                "note": "每解析200个label抽样检查一次对应jpg是否存在",
+            },
+        },
+        "images_stats": {
+            "sample_images_arg": sample_images,
+            "sampled_images_decoded": sampled_images,
+            "decode_fail": decode_fail,
+            "resolution_distribution": dict(resolutions),
+        },
+        "runtime": {
+            "seconds": time.time() - t0,
+        },
+        "generated_at_unix": time.time(),
+    }
+
+    json_path = output_dir / "bdd100k_summary.json"
+    md_path = output_dir / "bdd100k_summary.md"
+
+    with json_path.open("w", encoding="utf-8") as fp:
+        json.dump(summary, fp, ensure_ascii=False, indent=2)
+
+    # Markdown（面向论文/报告更好读）
+    def _topn(counter: Counter, n: int = 20):
+        return counter.most_common(n)
+
+    lines = []
+    lines.append("# BDD100K 数据集特征摘要（自动生成）")
+    lines.append("")
+    lines.append("## 输入位置")
+    lines.append(f"- 外部数据集根目录：`{external_root}`")
+    lines.append(f"- labels zip：`{labels_zip}`")
+    lines.append(f"- images zip：`{images_zip}`")
+    lines.append("")
+    lines.append("## Zip 成员统计")
+    lines.append(f"- labels JSON 总数：**{len(label_members)}**（按 split：{dict(label_count_by_split)}）")
+    lines.append(f"- images JPG 总数：**{len(image_members)}**（按 split：{dict(image_count_by_split)}）")
+    lines.append("")
+    lines.append("## labels 统计（基于解析的 label JSON）")
+    lines.append(f"- 实际解析文件数：**{num_files_processed}**（max_label_files={max_label_files}，0=全部）")
+    lines.append(f"- frames 总数：**{num_frames_total}**")
+    lines.append(f"- objects 总数：**{num_objects_total}**")
+    lines.append(f"- 每图 objects：min={o_min} mean={None if o_mean is None else round(o_mean, 3)} max={o_max}")
+    lines.append("")
+    lines.append("### 场景/时间/天气分布（Top20）")
+    lines.append("- scene：")
+    for k, v in _topn(scene_counter, 20):
+        lines.append(f"  - {k}: {v}")
+    lines.append("- timeofday：")
+    for k, v in _topn(timeofday_counter, 20):
+        lines.append(f"  - {k}: {v}")
+    lines.append("- weather：")
+    for k, v in _topn(weather_counter, 20):
+        lines.append(f"  - {k}: {v}")
+    lines.append("")
+    lines.append("### 类别分布（Top30）")
+    for k, v in _topn(category_counter, 30):
+        lines.append(f"- {k}: {v}")
+    lines.append("")
+    lines.append("### trafficLightColor 分布（Top20）")
+    for k, v in _topn(traffic_light_color_counter, 20):
+        lines.append(f"- {k}: {v}")
+    lines.append("")
+    lines.append("### bbox 基础统计（px）")
+    lines.append(f"- bbox_count：{bbox_stats['count']}")
+    lines.append(f"- width(min/mean/max)：{bbox_stats['width_min']} / {bbox_stats['width_mean']} / {bbox_stats['width_max']}")
+    lines.append(f"- height(min/mean/max)：{bbox_stats['height_min']} / {bbox_stats['height_mean']} / {bbox_stats['height_max']}")
+    lines.append(f"- area(min/mean/max)：{bbox_stats['area_min']} / {bbox_stats['area_mean']} / {bbox_stats['area_max']}")
+    lines.append("")
+    lines.append("### labels -> images 抽样一致性检查")
+    lines.append(f"- 检查次数：{match_check_total}，命中：{match_check_hit}，命中率：{summary['labels_stats']['label_to_image_match_check']['match_rate']}")
+    lines.append("")
+    lines.append("## images 统计（抽样解码）")
+    lines.append(f"- 抽样参数：sample_images={sample_images}")
+    lines.append(f"- 成功解码：{sampled_images}，失败：{decode_fail}")
+    lines.append("- 分辨率分布：")
+    for k, v in _topn(resolutions, 50):
+        lines.append(f"  - {k}: {v}")
+    lines.append("")
+    lines.append("## 运行信息")
+    lines.append(f"- 耗时（秒）：{round(summary['runtime']['seconds'], 3)}")
+    lines.append("")
+
+    with md_path.open("w", encoding="utf-8") as fp:
+        fp.write("\n".join(lines))
+
+    logger.info("BDD100K summary已生成", json=str(json_path), md=str(md_path))
 
 
 def extract_bdd100k(data_root: Path, keep_zip: bool = True):
@@ -462,7 +819,7 @@ def main():
     parser.add_argument(
         "--task",
         type=str,
-        choices=["extract_bdd100k", "generate_synthetic", "statistics", "all"],
+        choices=["extract_bdd100k", "generate_synthetic", "statistics", "bdd100k_summary", "all"],
         default="generate_synthetic",
         help="任务类型"
     )
@@ -483,6 +840,24 @@ def main():
         action="store_true",
         help="保留原始zip文件"
     )
+    parser.add_argument(
+        "--external-dataset-root",
+        type=str,
+        default=os.getenv("DATASET_PATH", "/Users/shiyifan/Documents/dataset"),
+        help="外部数据集根目录（应包含 BDD100K/）",
+    )
+    parser.add_argument(
+        "--max-label-files",
+        type=int,
+        default=0,
+        help="最多解析多少个 label JSON（0=全部，80k可能耗时较长）",
+    )
+    parser.add_argument(
+        "--sample-images",
+        type=int,
+        default=50,
+        help="从 images zip 中抽样解码多少张图用于分辨率统计",
+    )
     
     args = parser.parse_args()
     data_root = Path(args.data_root)
@@ -495,6 +870,14 @@ def main():
     
     elif args.task == "statistics":
         data_statistics(data_root)
+
+    elif args.task == "bdd100k_summary":
+        summarize_bdd100k(
+            external_root=Path(args.external_dataset_root),
+            output_dir=data_root / "BDD100K",
+            max_label_files=args.max_label_files,
+            sample_images=args.sample_images,
+        )
     
     elif args.task == "all":
         extract_bdd100k(data_root, args.keep_zip)
