@@ -5,12 +5,12 @@
 ## 元数据
 | 字段 | 内容 |
 | --- | --- |
-| 文档版本 | v2.0（系统性重构后） |
-| 原版本 | v1.0（2025-12-03之前，存在10个设计问题） |
+| 文档版本 | v2.1（代码映射对齐） |
+| 原版本 | v2.0（系统性重构），v1.0（初版） |
 | 迭代编号 | ITER-2025-01 |
 | 架构负责人 | 算法架构师（AI） |
-| 状态 | ✅ 重构完成（可进入实现阶段） |
-| 最后更新时间 | 2025-12-03（系统性重构） |
+| 状态 | ✅ 重构完成，🟡 实现85%完成 |
+| 最后更新时间 | 2025-12-16（代码映射对齐 + 实现状态标记） |
 | 关联需求 | `docs/iterations/ITER-2025-01/REQUIREMENT.md` |
 | 关联开发 | `docs/iterations/ITER-2025-01/DEVELOPMENT.md` |
 | 关联测试 | `docs/iterations/ITER-2025-01/TESTING.md` |
@@ -26,7 +26,7 @@
 > 解决问题8-9：架构图与包结构不一致
 
 - 本迭代交付 "红灯停" 无监督异常检测闭环：`数据摄取 → 场景图构建 → 多阶段注意力GNN + Memory → 规则引擎 → 约束损失 → 自训练 → 违规评分&解释 → 监控/报告`。
-- 技术栈统一为 Python 3.11 + PyTorch 2.4（CUDA 12.1 版，默认部署在 RTX 4090 GPU 上），所有模块封装为业务包，CLI 工具驱动训练/测试。
+- 技术栈统一为 Python 3.12 + PyTorch 2.4+（通过 Conda 管理），默认部署在 RTX 4090 GPU 上，所有模块封装为业务包，CLI 工具驱动训练/测试。
 - 核心服务运行在离线批处理模式，后续可扩展为长驻推理服务。
 
 **完整系统架构图**（Mermaid）：
@@ -126,21 +126,26 @@ graph TB
 
 ## 2. 概要设计
 
-### 2.1 代码包与职责
-| 包路径 | 主要职责 | 输入 / 输出 | 依赖 | 备注 |
-| --- | --- | --- | --- | --- |
-| `src/config` | 解析 YAML/环境变量，生成运行配置 | `configs/*.yaml` → `Config` | `pydantic`, `pyyaml` | 所有模块通过依赖注入获取配置 |
-| `src/data/traffic.py` | 数据加载、增强、停止线距离计算 | 文件系统 → `TrafficDataset` | `torchvision`, `opencv-python`, `numpy`, `pillow` | 支持 synthetic / BDD100K / Cityscapes |
-| `src/graph/builder.py` | 生成特征矩阵与邻接矩阵 | `TrafficSample` → `GraphBatch` | `torch`, `networkx` | 负责实体编码、邻接裁剪 |
-| `src/models/gat_attention.py` | 多头 GAT + 记忆注意力 + scoring head | `GraphBatch` → `AnomalyScores` | `torch` | 暴露注意力权重导出接口 |
-| `src/memory/bank.py` | Memory Bank管理：初始化（K-Means）、检索（余弦相似度）、更新（EMA）、马氏距离异常分数计算 | `node_repr` → `(memory_context, anomaly_score_mem)` | `torch`, `sklearn` | 可选模块，默认禁用；详见3.3.4节 |
-| `src/rules/red_light.py` | 规则 DSL、冲突检测、在线推理 | `SceneContext` → `rule_score/log` | `pydantic`, `numpy` | 后续可以新增车速/车道规则 |
-| `src/loss/constraint.py` | 约束损失（模型/规则一致、attention consistency） | `model_score`, `rule_score`, `attention` | `torch` | 统一由 Trainer 调用 |
-| `src/explain/attention_viz.py` | 注意力及违规证据可视化 | `attention_weight`, `scene` → `heatmap/report` | `matplotlib`, `opencv-python`, `rich` | CLI 可以指定输出格式 |
-| `src/self_training/pseudo_labeler.py` | 自训练控制器：筛选高置信度样本、写入伪标签、回放数据 | 模型输出 → `pseudo_dataset` | `torch`, `numpy`, `pandas` | 与 Trainer 协作，生成增量数据清单 |
-| `src/tools/train_red_light.py` | 训练 orchestrator、CLI 参数解析 | 配置 → checkpoint/日志 | `click`/`typer`, `tqdm` | 负责调度数据、模型、loss、自训练、监控 |
-| `src/tools/test_red_light.py` | 场景回放与验收测试 | checkpoint + scenario → 报告 | 同上 | 支持 `--scenario all/parking/violation/green` |
-| `src/monitoring/meters.py` | Prometheus 指标、结构化日志、告警 hook | 度量 → `/metrics` | `prometheus-client`, `structlog`, `rich` | CI/验收需展示指标截图 |
+### 2.1 代码包与职责（实现状态标记）
+| 包路径 | 主要职责 | 输入 / 输出 | 依赖 | 实现状态 | 备注 |
+| --- | --- | --- | --- | --- | --- |
+| `src/traffic_rules/config/` | Python配置类与加载器 | 环境变量 → `ProjectConfig` | `pydantic` | ✅ 已完成 | 所有模块通过依赖注入获取配置 |
+| `src/traffic_rules/data/traffic_dataset.py` | 数据加载、增强、停止线距离计算 | 文件路径 → `SceneContext` | `torch`, `numpy`, `pillow` | 🟡 部分完成 | synthetic完成，BDD100K/Cityscapes待实现 |
+| `src/traffic_rules/graph/builder.py` | 生成特征矩阵与邻接矩阵 | `SceneContext` → `GraphBatch` | `torch`, `networkx` | ✅ 已完成 | 10维特征编码、异构图边构建 |
+| `src/traffic_rules/models/multi_stage_gat.py` | 三阶段GAT主模型 + scoring head | `GraphBatch` → 输出字典 | `torch` | ✅ 已完成 | 包含LocalGAT/Global/RuleFocus三阶段 |
+| `src/traffic_rules/models/local_gat.py` | 局部GAT编码器（3层×8头） | `(x, edge_index)` → `h_local, α_gat` | `torch` | ✅ 已完成 | 基于PyG的GAT实现 |
+| `src/traffic_rules/models/global_attention.py` | 全局虚拟节点注意力 | `h_local` → `h_global, attn` | `torch` | ✅ 已完成 | 4头注意力 |
+| `src/traffic_rules/models/rule_attention.py` | 规则聚焦注意力 | `(h_global, entity_types)` → `h_rule, β` | `torch` | ✅ 已完成 | 规则embedding引导 |
+| `src/traffic_rules/memory/memory_bank.py` | Memory Bank：检索、持久化 | `embeddings` → `memory_context` | `torch` | 🟡 部分完成 | 基础完成，缺K-Means初始化/EMA更新 |
+| `src/traffic_rules/rules/red_light.py` | 红灯停规则评分引擎 | `(灯态, 距离, 速度)` → `rule_score` | `torch` | ✅ 已完成 | Gumbel-Softmax软化，梯度可导 |
+| `src/traffic_rules/loss/constraint.py` | 约束损失（四项：recon/rule/attn/reg） | `(model_scores, rule_scores, ...)` → `(loss, dict)` | `torch` | ✅ 已完成 | 双层注意力监督损失 |
+| `src/traffic_rules/explain/attention_viz.py` | 注意力热力图绘制 | `(image, entities, attn)` → `annotated_image` | `cv2`, `matplotlib` | 🟡 部分完成 | 基础热力图完成，批量渲染待补 |
+| `src/traffic_rules/self_training/pseudo_labeler.py` | 伪标签生成器（三策略） | `(model_scores, rule_scores)` → `List[PseudoLabel]` | `torch`, `pandas` | 🟡 部分完成 | 策略完成，未集成到训练循环 |
+| `src/traffic_rules/monitoring/metrics.py` | 评估指标计算（AUC/F1等） | `(model_scores, rule_scores)` → `Dict[metrics]` | `sklearn` | ✅ 已完成 | 完整的分类指标 |
+| `src/traffic_rules/monitoring/visualizer.py` | 训练曲线绘制 | `history` → PNG图片 | `matplotlib` | ✅ 已完成 | 4子图可视化 |
+| `src/traffic_rules/monitoring/gradient_monitor.py` | 梯度监控（爆炸/消失检测） | `model` → `grad_stats` | `torch` | ✅ 已完成 | 实时梯度健康检查 |
+| `tools/train_red_light.py` | 训练CLI编排器 | 命令行参数 → checkpoint/曲线 | `typer`, `tqdm` | ✅ 已完成 | 完整训练循环，缺自训练集成 |
+| `tools/test_red_light.py` | 测试CLI | `(checkpoint, data)` → JSON证据链 | `typer` | ✅ 已完成 | 输出JSON报告，缺三场景分类 |
 
 ### 2.2 包之间的联系
 
@@ -204,14 +209,122 @@ config
 3. ✅ **松耦合**：通过接口和配置注入，模块可替换
 4. ✅ **可选模块**：memory和self_training可通过配置禁用
 
-### 2.3 关键接口
-- `TrafficDataset.__getitem__` → `entities, adj_matrix, scene_context`
-- `GraphBuilder.build(batch)` → `GraphBatch(feature_tensor, adj, context)`
-- `GATAttention.forward(graph_batch)` → `node_scores, attention_weights`
-- `RuleEngine.evaluate(scene_context)` → `rule_scores, rule_logs`
-- `ConstraintLoss.forward(model_scores, rule_scores, attention)` → `loss_dict`
-- `AttentionVisualizer.render(scene, attn)` → `Path`
-- `Monitoring.log(metric_name, value, tags)` → None
+### 2.3 关键接口（实际代码签名）
+
+> 以下接口签名从实际代码中提取（2025-12-16），确保文档与代码一致
+
+#### 数据层
+```python
+class TrafficLightDataset(Dataset):
+    def __init__(
+        self,
+        data_root: str = "data/synthetic",
+        mode: str = "synthetic",  # 'synthetic' | 'bdd100k' | 'cityscapes'
+        split: str = "train",     # 'train' | 'val' | 'test'
+        max_samples: Optional[int] = None,
+        augment: bool = False,
+    )
+    
+    def __getitem__(self, idx: int) -> SceneContext
+    def __len__(self) -> int
+```
+
+#### 图构建层
+```python
+class GraphBuilder:
+    def __init__(
+        self,
+        feature_dim: int = 10,
+        r_car_car: float = 30.0,
+        r_car_light: float = 50.0,
+        r_car_stop: float = 100.0,
+    )
+    
+    def build(self, scene: SceneContext) -> GraphBatch
+    # GraphBatch包含：x: [N, 10], edge_index: [2, E], entity_types: [N]
+```
+
+#### 模型层
+```python
+class MultiStageAttentionGAT(nn.Module):
+    def __init__(
+        self,
+        input_dim: int = 10,
+        hidden_dim: int = 128,
+        num_gat_layers: int = 3,
+        num_heads: int = 8,
+        num_global_heads: int = 4,
+        dropout: float = 0.1,
+    )
+    
+    def forward(
+        self,
+        x: torch.Tensor,              # [N, 10] 节点特征
+        edge_index: torch.Tensor,     # [2, E] 边索引
+        entity_types: torch.Tensor,   # [N] 实体类型
+        entity_masks: Optional[torch.Tensor] = None,
+        return_attention: bool = False,
+    ) -> Dict[str, torch.Tensor]
+    # 返回: {'scores': [N_car], 'gat_attention': [E], 'rule_attention': [N_car]}
+```
+
+#### 规则引擎
+```python
+class RedLightRuleEngine:
+    def __init__(self, config: Optional[RuleConfig] = None)
+    
+    def evaluate(
+        self,
+        light_probs: torch.Tensor,    # [B, 3] 灯态概率
+        distances: torch.Tensor,      # [B] 停止线距离
+        velocities: torch.Tensor,     # [B] 速度
+        training: bool = True,
+    ) -> torch.Tensor  # [B] 规则分数
+```
+
+#### 损失函数
+```python
+class StagedConstraintLoss(nn.Module):
+    def __init__(self, config: Optional[LossConfig] = None)
+    
+    def forward(
+        self,
+        model_scores: torch.Tensor,    # [N_car] 模型异常分数
+        rule_scores: torch.Tensor,     # [N_car] 规则分数
+        alpha_gat: torch.Tensor,       # [E] GAT注意力
+        beta_rule: torch.Tensor,       # [N_car] 规则注意力
+        edge_index: torch.Tensor,      # [2, E]
+        entity_types: torch.Tensor,    # [N]
+        model_parameters: List[nn.Parameter],
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]
+    # 返回: (loss_total, {'recon': ..., 'rule': ..., 'attn': ..., 'reg': ...})
+```
+
+#### 自训练
+```python
+class PseudoLabeler:
+    def generate_rule_priority(
+        self,
+        model_scores: torch.Tensor,
+        rule_scores: torch.Tensor,
+        attention_max: torch.Tensor,
+        scene_ids: List[str],
+        entity_ids: List[str],
+    ) -> List[PseudoLabel]
+    
+    def save_to_disk(self, output_dir: Path) -> Path
+```
+
+#### 可解释性
+```python
+def visualize_attention(
+    image: np.ndarray,              # [H, W, 3]
+    entities: List[Entity],
+    attention_weights: torch.Tensor,  # [N]
+    focal_entity_idx: int,
+    save_path: Optional[str] = None,
+) -> np.ndarray  # 标注后的图像
+```
 
 ## 3. 详细设计
 
@@ -1487,10 +1600,11 @@ def test_scenario(model, scenario_name):
 
 **命令**：
 ```bash
-poetry run python tools/test_red_light.py run \
+python3 tools/test_red_light.py run \
   --checkpoint artifacts/checkpoints/best.pth \
-  --scenario all \
-  --report-dir reports/
+  --data-root data/synthetic \
+  --split val \
+  --report-dir reports/testing
 ```
 
 ### 3.7 训练模式与自训练机制
@@ -2131,8 +2245,9 @@ flake8==7.0.0
 # 方法1：使用pip（推荐）
 pip install -r requirements.txt
 
-# 方法2：使用poetry（如果使用pyproject.toml）
-poetry install
+# 方法2：使用Conda（推荐）
+conda env create -f environment-dev.yml
+conda activate traffic-rules-dev
 
 # 验证安装
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"

@@ -5,50 +5,52 @@
 ## 元数据
 | 字段 | 内容 |
 | --- | --- |
-| 文档版本 | v0.1 |
+| 文档版本 | v0.2 |
 | 迭代编号 | ITER-2025-01 |
 | 技术负责人 | 待指派 |
-| 状态 | 草稿 |
-| 最后更新时间 | 2025-11-30 |
+| 状态 | 🟡 开发中（85%完成） |
+| 最后更新时间 | 2025-12-16（更新实施进度） |
 | 关联需求 | `docs/iterations/ITER-2025-01/REQUIREMENT.md` |
 | 关联设计 | `docs/iterations/ITER-2025-01/DESIGN.md` |
 | 关联测试 | `docs/iterations/ITER-2025-01/TESTING.md` |
 
-## 1. 里程碑与交付
-| 日期 | 里程碑 | 说明 / 交付物 |
-| --- | --- | --- |
-| 12-01 | 目录骨架可审核 | README 代码结构、Poetry 配置、src/traffic_rules 占位模块、CLI/Test 骨架 |
-| 12-02 | 需求冻结 | README/需求/设计/测试文档同步；确认 Python 技术栈 |
-| 12-03 | MVP 模块实现 | GraphBuilder/GAT+Memory、RuleEngine/Loss、可解释性、伪标签、CLI & 测试 |
-| 12-05 | 数据与配置就绪 | `TrafficLightDataset`、合成数据脚本、`configs/mvp.yaml` |
-| 12-10 | 模型与注意力模块完成 | GAT + 记忆注意力、规则损失、指标埋点、可解释脚本 |
-| 12-13 | 测试/验收 | `pytest` + CLI 测试 + 注意力可视化输出 |
-| 12-15 | 交付评审 | 提交报告、指标、Artifacts、文档更新 |
+## 1. 里程碑与交付（实际进度）
+| 日期 | 里程碑 | 说明 / 交付物 | 实际状态 |
+| --- | --- | --- | --- |
+| 12-01 | 目录骨架可审核 | README 代码结构、Python配置、src/traffic_rules 模块、CLI骨架 | ✅ 已完成 |
+| 12-02 | 需求冻结 | README/需求/设计/测试文档同步；确认 Python 技术栈 | ✅ 已完成 |
+| 12-03 | MVP 模块实现 | GraphBuilder/GAT+Memory、RuleEngine/Loss、可解释性、伪标签、CLI | ✅ 主体完成 |
+| 12-05 | 数据与配置就绪 | `TrafficLightDataset`、合成数据脚本、Python配置系统 | ✅ 已完成 |
+| 12-10 | 模型与注意力模块完成 | GAT + 记忆注意力、规则损失、指标埋点、可解释脚本 | ✅ 已完成 |
+| 12-13 | 测试/验收 | `pytest` + CLI 测试 + 注意力可视化输出 | 🟡 部分完成（缺三场景验收） |
+| 12-16 | 文档与代码对齐 | 需求状态标记、详细设计文档、实施计划 | 🟢 进行中 |
+| 12-17 | 交付评审（目标） | 提交报告、指标、Artifacts、文档更新 | ⏳ 待完成 |
 
 ## 2. 技术环境
-- **语言/运行时**：Python 3.11（Poetry 管理，`poetry.lock` 必须提交）。
-- **依赖**：`torch>=2.4`, `torchvision`, `opencv-python`, `numpy`, `pydantic`, `networkx`, `prometheus-client`, `rich`.
-- **硬件**：开发使用 macOS + M3，本地 CPU/GPU；测试/训练在 Ubuntu 22.04 + NVIDIA RTX 4090（CUDA 12.1）。
+- **语言/运行时**：Python 3.12（Conda 管理，`environment-dev.yml` 为开发环境定义）。
+- **依赖**：`torch>=2.4`, `torchvision>=0.19`, `numpy>=1.26`, `pydantic>=2.7`, `networkx>=3.2`, `prometheus-client>=0.20`, `rich>=13.7`（通过 conda-forge 安装）。
+- **硬件**：开发使用 macOS + M3，本地 CPU；测试/训练在 Ubuntu 22.04 + NVIDIA RTX 4090（CUDA 12.1）。
 - **基线命令**：
   ```bash
-  poetry install
-  poetry run black --check --line-length 100 .
-  poetry run ruff check src tests
-  poetry run mypy src --strict
-  poetry run pytest --maxfail=1 --cov=src --cov-report=xml
+  conda env create -f environment-dev.yml
+  conda activate traffic-rules-dev
+  black --check --line-length 100 .
+  ruff check src tests
+  mypy src --strict
+  pytest --maxfail=1 --cov=src --cov-report=xml
   ```
 
-## 3. 工作分解结构
-| 模块 | Owner | 任务拆分 | 产出 |
-| --- | --- | --- | --- |
-| 数据摄取 (WBS-01) | Data 工程 | `TrafficLightDataset`、BDD100K/Cityscapes 解析、合成数据脚本、停线距离计算 | `src/data/traffic.py`、`scripts/prepare_synthetic_data.py` |
-| 语义图建模 (WBS-02) | AI 工程 | 实体特征编码、邻接矩阵构建、规则 DSL schema | `src/models/graph_builder.py` |
-| 注意力增强 (WBS-03) | AI 工程 | 多头 GAT、记忆注意力检索、attention dump API | `src/models/attention.py`、`tools/visualize_attention.py` |
-| 规则/损失 (WBS-04) | AI 工程 | 红灯规则 DSL、约束 Loss、命中日志 | `src/rules/red_light.py`、`src/loss/constraint.py` |
-| 训练与 CLI (WBS-05) | 平台 | `tools/train_red_light.py`、`tools/test_red_light.py`、配置管理 | `configs/mvp.yaml`、`artifacts/checkpoints/` |
-| 监控与指标 (WBS-06) | 平台 | Prometheus 指标、违规统计、日志结构化 | `src/monitoring/meters.py`、Grafana 面板链接 |
-| 文档 & 可解释性 (WBS-07) | 全员 | README 索引、需求/设计/测试同步、注意力热力图、报告模板 | `docs/` 更新、`reports/mvp_attention.md` |
-| 自训练与伪标签 (WBS-08) | AI 工程 | 置信度阈值策略、伪标签写入/回放、指标上报 | `src/self_training/pseudo_labeler.py`、`artifacts/pseudo_labels/`、监控事件 |
+## 3. 工作分解结构（WBS）- 实际产出
+| 模块 | Owner | 任务拆分 | 实际产出 | 完成状态 |
+| --- | --- | --- | --- | --- |
+| 数据摄取 (WBS-01) | Data 工程 | `TrafficLightDataset`、BDD100K/Cityscapes 解析、合成数据脚本、停线距离计算 | ✅ `src/traffic_rules/data/traffic_dataset.py`<br/>✅ `scripts/prepare_synthetic_data.py`<br/>✅ `src/traffic_rules/utils/geometry.py`<br/>❌ BDD100K/Cityscapes解析器（待ITER-02） | 🟡 60% |
+| 语义图建模 (WBS-02) | AI 工程 | 实体特征编码、邻接矩阵构建、规则 DSL schema | ✅ `src/traffic_rules/graph/builder.py` | ✅ 100% |
+| 注意力增强 (WBS-03) | AI 工程 | 多头 GAT、记忆注意力检索、attention dump API | ✅ `src/traffic_rules/models/multi_stage_gat.py`<br/>✅ `src/traffic_rules/models/local_gat.py`<br/>✅ `src/traffic_rules/models/global_attention.py`<br/>✅ `src/traffic_rules/models/rule_attention.py`<br/>✅ `src/traffic_rules/explain/attention_viz.py` | ✅ 95% |
+| 规则/损失 (WBS-04) | AI 工程 | 红灯规则 DSL、约束 Loss、命中日志 | ✅ `src/traffic_rules/rules/red_light.py`<br/>✅ `src/traffic_rules/loss/constraint.py` | ✅ 100% |
+| 训练与 CLI (WBS-05) | 平台 | `tools/train_red_light.py`、`tools/test_red_light.py`、配置管理 | ✅ `tools/train_red_light.py`<br/>✅ `tools/test_red_light.py`<br/>✅ `src/traffic_rules/config/`（Python配置） | ✅ 95% |
+| 监控与指标 (WBS-06) | 平台 | Prometheus 指标、违规统计、日志结构化 | ✅ `src/traffic_rules/monitoring/metrics.py`<br/>✅ `src/traffic_rules/monitoring/gradient_monitor.py`<br/>✅ `src/traffic_rules/monitoring/visualizer.py` | ✅ 100% |
+| 文档 & 可解释性 (WBS-07) | 全员 | README 索引、需求/设计/测试同步、注意力热力图、报告模板 | ✅ `docs/` 文档更新完成<br/>🟡 `scripts/render_attention_maps.py`（占位） | 🟡 70% |
+| 自训练与伪标签 (WBS-08) | AI 工程 | 置信度阈值策略、伪标签写入/回放、指标上报 | ✅ `src/traffic_rules/self_training/pseudo_labeler.py`<br/>🟡 未集成到训练循环 | 🟡 40% |
 
 ## 4. 风险与缓解
 | 风险 | 影响 | 级别 | 缓解策略 |
@@ -65,15 +67,18 @@
 - **静态检查**：`black + isort + ruff + mypy + bandit + pip-audit`，CI 阻断。
 - **可观测性**：Prometheus 指标（loss、违规数、attention 一致率）、结构化日志（trace_id、scene_id、rule_name）。
 
-## 6. 发布前检查
-- [ ] README、需求、设计、测试文档更新且评审通过。
-- [ ] 全量 lint/type/test 通过，并在 PR 附上命令输出或 CI 链接。
-- [ ] `scripts/setup_mvp_env.sh`、`scripts/prepare_synthetic_data.py`、`scripts/render_attention_maps.py` 可执行。
-- [ ] artifacts：模型 checkpoint、注意力权重、违规报告、Prometheus 指标截图。
-- [ ] 回滚方案：保留上一版本 checkpoint + configs，提供 `tools/test_red_light.py --checkpoint <prev>` 验证指令。
+## 6. 发布前检查（当前状态）
+- [x] README、需求、设计、测试文档更新（2025-12-16已对齐）
+- [ ] 全量 lint/type/test 通过（待执行）
+- [x] `scripts/prepare_synthetic_data.py` 可执行且已生成数据
+- [ ] `scripts/render_attention_maps.py` 完善（当前为占位）
+- [ ] artifacts：需要运行完整训练生成 checkpoint
+- [ ] 三场景验收测试（parking/violation/green_pass）
+- [ ] 完整验收报告（含违规截图、注意力热力图）
 
 ## 7. 变更记录
 | 日期 | 版本 | 内容 | 责任人 |
 | --- | --- | --- | --- |
 | 2025-11-30 | v0.1 | 新建 ITER-2025-01 开发计划，明确任务拆分与注意力增强交付物 | 技术负责人（AI） |
+| 2025-12-16 | v0.2 | 更新里程碑实际进度、WBS产出状态、发布前检查清单 | 技术负责人（AI） |
 
