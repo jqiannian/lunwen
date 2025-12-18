@@ -1,0 +1,115 @@
+"""
+GraphBuilder 单元测试
+"""
+
+import sys
+from pathlib import Path
+
+import pytest
+import torch
+
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.traffic_rules.graph.builder import GraphBuilder
+from src.traffic_rules.data.traffic_dataset import TrafficLightDataset
+
+
+class TestGraphBuilder:
+    """测试GraphBuilder类"""
+    
+    def test_graph_builder_initialization(self):
+        """测试图构建器初始化"""
+        builder = GraphBuilder(
+            feature_dim=10,
+            r_car_car=20.0,
+            r_car_light=30.0,
+            r_car_stop=15.0,
+        )
+        
+        assert builder.feature_dim == 10
+        assert builder.r_car_car == 20.0
+        print("✅ GraphBuilder初始化成功")
+    
+    def test_encode_entity_features(self):
+        """测试实体特征编码"""
+        builder = GraphBuilder()
+        
+        # 创建测试实体（简化）
+        from types import SimpleNamespace
+        entity = SimpleNamespace(
+            pos=[100.0, 50.0],
+            velocity=5.0,
+            bbox=[98.0, 48.0, 102.0, 52.0],
+            d_stop=10.0,
+            type='car',
+        )
+        
+        features = builder.encode_entity_features(entity)
+        
+        assert features.shape == (10,), f"期望10维特征，实际{features.shape}"
+        assert features[0] == 100.0, "第0维应为x坐标"
+        assert features[1] == 50.0, "第1维应为y坐标"
+        assert features[2] == 5.0, "第2维应为速度"
+        
+        print(f"✅ 特征编码正确: shape={features.shape}")
+    
+    def test_build_graph_from_scene(self):
+        """测试从场景构建图"""
+        dataset = TrafficLightDataset(
+            data_root="data/synthetic",
+            mode="synthetic",
+            split="val",
+            max_samples=1,
+        )
+        
+        scene = dataset[0]
+        builder = GraphBuilder()
+        graph = builder.build(scene)
+        
+        # 验证图结构
+        assert hasattr(graph, 'x'), "缺少节点特征x"
+        assert hasattr(graph, 'edge_index'), "缺少边索引edge_index"
+        assert hasattr(graph, 'entity_types'), "缺少实体类型"
+        
+        # 验证维度
+        assert graph.x.shape[1] == 10, "节点特征应为10维"
+        assert graph.edge_index.shape[0] == 2, "边索引应为2×E"
+        
+        print(f"✅ 图构建成功: {graph.x.shape[0]}个节点, {graph.edge_index.shape[1]}条边")
+    
+    def test_edge_construction(self):
+        """测试边构建逻辑"""
+        dataset = TrafficLightDataset(
+            data_root="data/synthetic",
+            mode="synthetic",
+            split="val",
+            max_samples=1,
+        )
+        
+        scene = dataset[0]
+        builder = GraphBuilder()
+        graph = builder.build(scene)
+        
+        # 验证边数大于0
+        assert graph.edge_index.shape[1] > 0, "图应至少有一些边"
+        
+        # 验证边索引范围
+        num_nodes = graph.x.shape[0]
+        assert graph.edge_index.max() < num_nodes, "边索引超出节点数量"
+        assert graph.edge_index.min() >= 0, "边索引不应为负"
+        
+        print(f"✅ 边构建正确: {graph.edge_index.shape[1]}条边")
+
+
+if __name__ == "__main__":
+    test = TestGraphBuilder()
+    
+    test.test_graph_builder_initialization()
+    test.test_encode_entity_features()
+    test.test_build_graph_from_scene()
+    test.test_edge_construction()
+    
+    print("\n" + "="*60)
+    print("✅ 所有GraphBuilder测试通过！")
+    print("="*60)

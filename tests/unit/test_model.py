@@ -1,0 +1,153 @@
+"""
+MultiStageAttentionGAT 单元测试
+"""
+
+import sys
+from pathlib import Path
+
+# import pytest
+import torch
+
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+from src.traffic_rules.models.multi_stage_gat import MultiStageAttentionGAT
+
+
+class TestMultiStageGAT:
+    """测试MultiStageAttentionGAT模型"""
+    
+    def test_model_initialization(self):
+        """测试模型初始化"""
+        model = MultiStageAttentionGAT(
+            input_dim=10,
+            hidden_dim=128,
+            num_gat_layers=3,
+            num_heads=8,
+            dropout=0.1,
+        )
+        
+        assert model.input_dim == 10
+        assert model.hidden_dim == 128
+        
+        print("✅ 模型初始化成功")
+    
+    def test_forward_pass(self):
+        """测试前向传播"""
+        model = MultiStageAttentionGAT(
+            input_dim=10,
+            hidden_dim=128,
+            num_gat_layers=3,
+            num_heads=8,
+            dropout=0.1,
+        )
+        model.eval()
+        
+        # 创建测试数据
+        num_nodes = 5
+        num_edges = 8
+        
+        x = torch.randn(num_nodes, 10)
+        edge_index = torch.randint(0, num_nodes, (2, num_edges))
+        entity_types = torch.tensor([0, 0, 1, 2, 0])  # car, car, light, stop, car
+        
+        # 前向传播
+        with torch.no_grad():
+            output = model(x, edge_index, entity_types, return_attention=False)
+        
+        # 验证输出
+        assert 'scores' in output, "输出应包含scores"
+        
+        num_cars = (entity_types == 0).sum()
+        assert output['scores'].shape[0] == num_cars, f"scores应有{num_cars}个车辆分数"
+        
+        print(f"✅ 前向传播成功: scores.shape={output['scores'].shape}")
+    
+    def test_attention_weights_output(self):
+        """测试注意力权重输出"""
+        model = MultiStageAttentionGAT(
+            input_dim=10,
+            hidden_dim=128,
+            num_gat_layers=3,
+            num_heads=8,
+            dropout=0.1,
+        )
+        model.eval()
+        
+        # 测试数据
+        num_nodes = 5
+        num_edges = 8
+        
+        x = torch.randn(num_nodes, 10)
+        edge_index = torch.randint(0, num_nodes, (2, num_edges))
+        entity_types = torch.tensor([0, 0, 1, 2, 0])
+        
+        # 请求注意力权重
+        with torch.no_grad():
+            output = model(x, edge_index, entity_types, return_attention=True)
+        
+        # 验证注意力权重
+        assert 'gat_attention' in output, "应包含GAT注意力"
+        assert 'rule_attention' in output, "应包含规则注意力"
+        
+        assert output['gat_attention'].shape[0] == num_edges, "GAT注意力应有E个值"
+        
+        print(f"✅ 注意力权重输出正确")
+    
+    def test_model_parameter_count(self):
+        """测试模型参数量"""
+        model = MultiStageAttentionGAT(
+            input_dim=10,
+            hidden_dim=128,
+            num_gat_layers=3,
+            num_heads=8,
+            dropout=0.1,
+        )
+        
+        num_params = sum(p.numel() for p in model.parameters())
+        
+        # 验证参数量在合理范围内（~500K）
+        assert 400_000 < num_params < 700_000, f"参数量异常: {num_params}"
+        
+        print(f"✅ 模型参数量: {num_params:,} (~{num_params/1e6:.2f}M)")
+    
+    def test_gradient_flow(self):
+        """测试梯度流"""
+        model = MultiStageAttentionGAT(
+            input_dim=10,
+            hidden_dim=128,
+            num_gat_layers=3,
+            num_heads=8,
+            dropout=0.1,
+        )
+        model.train()
+        
+        # 测试数据
+        x = torch.randn(5, 10, requires_grad=True)
+        edge_index = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 4]])
+        entity_types = torch.tensor([0, 0, 1, 2, 0])
+        
+        # 前向+反向
+        output = model(x, edge_index, entity_types, return_attention=False)
+        loss = output['scores'].sum()
+        loss.backward()
+        
+        # 验证梯度存在
+        has_grad = any(p.grad is not None and p.grad.abs().sum() > 0 for p in model.parameters())
+        assert has_grad, "模型应有梯度"
+        
+        print(f"✅ 梯度流正常")
+
+
+if __name__ == "__main__":
+    test = TestMultiStageGAT()
+    
+    test.test_model_initialization()
+    test.test_forward_pass()
+    test.test_attention_weights_output()
+    test.test_model_parameter_count()
+    test.test_gradient_flow()
+    
+    print("\n" + "="*60)
+    print("✅ 所有MultiStageGAT测试通过！")
+    print("="*60)

@@ -6,7 +6,11 @@
 """
 
 import torch
-import pandas as pd
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 import json
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -225,8 +229,14 @@ class PseudoLabeler:
             })
         
         if len(data) > 0:
-            df = pd.DataFrame(data)
-            df.to_parquet(save_dir / f'epoch_{epoch:03d}.parquet')
+            # 保存为JSON（pandas可选）
+            if HAS_PANDAS:
+                df = pd.DataFrame(data)
+                df.to_parquet(save_dir / f'epoch_{epoch:03d}.parquet')
+            else:
+                # 使用JSON作为后备
+                with open(save_dir / f'epoch_{epoch:03d}.json', 'w') as jf:
+                    json.dump(data, jf, indent=2)
             
             # 保存统计信息
             stats = {

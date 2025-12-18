@@ -34,6 +34,9 @@ from src.traffic_rules.rules.red_light import RedLightRuleEngine
 from src.traffic_rules.monitoring.gradient_monitor import GradientMonitor
 from src.traffic_rules.monitoring.metrics import compute_full_metrics
 from src.traffic_rules.monitoring.visualizer import TrainingVisualizer
+from src.traffic_rules.memory.memory_bank import MemoryBank
+from src.traffic_rules.self_training.pseudo_labeler import PseudoLabeler
+from src.traffic_rules.self_training.scheduler import SelfTrainingScheduler
 
 app = typer.Typer()
 console = Console()
@@ -58,6 +61,8 @@ class Trainer:
         grad_clip: float = 1.0,
         epochs: int = 50,
         checkpoint_dir: str = 'artifacts/checkpoints',
+        enable_self_training: bool = False,
+        enable_memory_bank: bool = False,
     ):
         """初始化训练器"""
         self.model = model.to(device)
@@ -66,6 +71,8 @@ class Trainer:
         self.device = device
         self.epochs = epochs
         self.grad_clip = grad_clip
+        self.enable_self_training = enable_self_training
+        self.enable_memory_bank = enable_memory_bank
         
         # 优化器
         self.optimizer = AdamW(
@@ -122,6 +129,35 @@ class Trainer:
             'rule_consistency': [],
             'attention_focus': [],
         }
+        
+        # 自训练组件（可选）
+        if enable_self_training:
+            console.print("[cyan]启用自训练模式[/cyan]")
+            self.st_scheduler = SelfTrainingScheduler(
+                total_epochs=epochs,
+                warmup_epochs=min(10, epochs // 5),
+                pseudo_label_interval=5,
+                initial_threshold=0.8,
+                final_threshold=0.6,
+                strategy='linear',
+            )
+            self.pseudo_labeler = PseudoLabeler(
+                strategy='adaptive',
+                threshold_conf=0.7,
+                threshold_consistency=0.1,
+            )
+        else:
+            self.st_scheduler = None
+            self.pseudo_labeler = None
+        
+        # Memory Bank组件（可选）
+        if enable_memory_bank:
+            console.print("[cyan]启用Memory Bank[/cyan]")
+            # 使用模型hidden_dim作为embedding_dim
+            hidden_dim = model.hidden_dim if hasattr(model, 'hidden_dim') else 128
+            self.memory_bank = MemoryBank(size=256, embedding_dim=hidden_dim)
+        else:
+            self.memory_bank = None
     
     def train_epoch(self) -> Dict[str, float]:
         """训练一个epoch"""
@@ -382,6 +418,27 @@ class Trainer:
             # 学习率调度
             self.scheduler.step()
             
+            # 自训练逻辑（如果启用）
+            if self.enable_self_training and self.st_scheduler:
+                self.st_scheduler.step()
+                
+                if self.st_scheduler.should_generate_pseudo_labels():
+                    console.print(f"\n[yellow]📝 Epoch {epoch}: 生成伪标签...[/yellow]")
+                    threshold = self.st_scheduler.get_confidence_threshold()
+                    console.print(f"   置信度阈值: {threshold:.3f}")
+                    
+                    # 简化实现：记录触发了伪标签生成
+                    # 实际使用需要实现完整的伪标签生成和训练逻辑
+                    console.print(f"   [dim]伪标签生成功能已触发（完整实现待补充）[/dim]")
+            
+            # Memory Bank更新（如果启用）
+            if self.enable_memory_bank and self.memory_bank:
+                # 简化实现：每10个epoch保存一次
+                if epoch % 10 == 0 and epoch > 0:
+                    console.print(f"[cyan]💾 保存Memory Bank (epoch {epoch})[/cyan]")
+                    mb_path = Path(f"artifacts/memory_bank_epoch_{epoch}.pth")
+                    self.memory_bank.save(mb_path)
+            
             # 验证（每5个epoch）
             if epoch % 5 == 0 or epoch == self.epochs - 1:
                 val_metrics = self.validate()
@@ -527,6 +584,8 @@ def train(
     device: str = typer.Option("cpu", help="设备: cpu/cuda"),
     checkpoint_dir: str = typer.Option("artifacts/checkpoints", help="Checkpoint目录"),
     max_samples: Optional[int] = typer.Option(None, help="最大样本数（调试用）"),
+    enable_self_training: bool = typer.Option(False, "--self-training", help="启用自训练"),
+    enable_memory_bank: bool = typer.Option(False, "--memory-bank", help="启用Memory Bank"),
 ):
     """
     训练红灯停异常检测模型
@@ -588,6 +647,8 @@ def train(
         learning_rate=lr,
         epochs=epochs,
         checkpoint_dir=checkpoint_dir,
+        enable_self_training=enable_self_training,
+        enable_memory_bank=enable_memory_bank,
     )
     
     # 开始训练
